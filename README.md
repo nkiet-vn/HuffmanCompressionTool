@@ -1,243 +1,255 @@
 # HuffmanCompressionTool
 
-**Huffman Archiver** is a lightweight file compression and decompression application written in standard C++17. It uses **Huffman Coding**, a lossless compression algorithm, to reduce file size while preserving the original data exactly.
+**Huffman Archiver** là ứng dụng nén và giải nén tệp sử dụng thuật toán mã hóa Huffman, được xây dựng bằng ngôn ngữ C++17. Ứng dụng thực hiện nén không mất dữ liệu, giúp giảm dung lượng lưu trữ trong những trường hợp phù hợp và khôi phục chính xác nội dung tệp ban đầu sau khi giải nén.
 
-The application supports both text and binary files, uses a custom binary file format, and verifies data integrity during decompression.
+Chương trình hỗ trợ cả tệp văn bản và tệp nhị phân, sử dụng định dạng lưu trữ riêng và tích hợp cơ chế kiểm tra tính toàn vẹn dữ liệu.
 
-## 1. Overview
+## 1. Giới thiệu
 
-Huffman Archiver demonstrates the practical implementation of a lossless compression system, combining data structures, bitwise operations, binary file processing, and algorithm design.
+Huffman Archiver được phát triển nhằm vận dụng kiến thức về cấu trúc dữ liệu, giải thuật, thao tác bit và xử lý tệp nhị phân để xây dựng một ứng dụng nén dữ liệu hoàn chỉnh.
 
-### Key Features
+### Các tính năng chính
 
-- **Lossless compression:** Restores the original file byte-for-byte.
-- **Text and binary support:** Processes arbitrary file contents without assuming a specific file type.
-- **Huffman coding:** Builds a coding tree based on byte frequencies.
-- **Custom binary format:** Stores the metadata required for decompression.
-- **Data integrity verification:** Uses checksums to detect corrupted or modified data.
-- **Memory efficiency:** Processes files in blocks of 64 KB instead of loading the entire file into memory.
-- **Error handling:** Detects invalid input, corrupted headers, truncated files, and unsupported format versions.
-- **Command-line interface:** Supports compression, decompression, and inspection of compressed files.
-- **Console interface:** Provides an interactive menu and operation status information.
+- **Nén không mất dữ liệu:** Khôi phục nội dung tệp ban đầu chính xác đến từng byte.
+- **Hỗ trợ nhiều loại tệp:** Xử lý cả dữ liệu văn bản và dữ liệu nhị phân.
+- **Mã hóa Huffman:** Xây dựng cây Huffman dựa trên tần suất xuất hiện của các byte.
+- **Định dạng tệp riêng:** Lưu trữ thông tin cần thiết để giải nén dữ liệu.
+- **Kiểm tra tính toàn vẹn:** Sử dụng mã kiểm tra dữ liệu (checksum) để phát hiện dữ liệu bị thay đổi hoặc hỏng.
+- **Tối ưu bộ nhớ:** Xử lý dữ liệu theo từng khối 64 KB, hạn chế việc phải nạp toàn bộ tệp vào bộ nhớ.
+- **Xử lý lỗi:** Phát hiện các trường hợp tệp đầu vào không hợp lệ, phần đầu tệp bị hỏng, dữ liệu bị cắt cụt hoặc phiên bản định dạng không được hỗ trợ.
+- **Giao diện dòng lệnh:** Hỗ trợ nén, giải nén và xem thông tin tệp đã nén.
+- **Giao diện tương tác:** Cung cấp menu điều khiển trên cửa sổ dòng lệnh và hiển thị thông tin kết quả xử lý.
 
-## 2. How It Works
+## 2. Nguyên lý hoạt động
 
-Huffman coding assigns variable-length binary codes to symbols according to their frequencies. More frequent symbols generally receive shorter codes, while less frequent symbols receive longer codes.
+Mã hóa Huffman là thuật toán nén dữ liệu không mất thông tin, sử dụng các mã nhị phân có độ dài thay đổi tùy theo tần suất xuất hiện của từng ký hiệu. Thông thường, ký hiệu xuất hiện nhiều được gán mã ngắn hơn, trong khi ký hiệu xuất hiện ít được gán mã dài hơn.
 
-The compression process consists of the following steps:
+Quá trình nén gồm các bước chính:
 
-1. **Frequency analysis:** Read the input file and count the frequency of each byte.
-2. **Tree construction:** Build a Huffman tree using a priority queue.
-3. **Code generation:** Traverse the tree to generate a binary code for each byte.
-4. **Bit encoding:** Encode the input data using the generated codes and write the resulting bits to a binary file.
-5. **Metadata storage:** Store the information required to reconstruct the coding tree and recover the original data.
+1. **Thống kê tần suất:** Đọc tệp đầu vào và đếm số lần xuất hiện của từng byte.
+2. **Xây dựng cây Huffman:** Sử dụng hàng đợi ưu tiên để kết hợp các nút theo tần suất xuất hiện.
+3. **Sinh mã nhị phân:** Duyệt cây Huffman để xác định mã tương ứng với từng byte.
+4. **Mã hóa dữ liệu:** Thay thế các byte bằng mã Huffman tương ứng, sau đó ghi chuỗi bit vào tệp nhị phân.
+5. **Lưu thông tin cần thiết:** Ghi phần đầu tệp và các thông tin liên quan để có thể khôi phục dữ liệu khi giải nén.
 
-During decompression, the application reads the metadata, reconstructs the Huffman tree, decodes the compressed bitstream, and verifies the integrity of the recovered data.
+Quá trình giải nén thực hiện theo chiều ngược lại: đọc thông tin lưu trữ, tái tạo cây Huffman, giải mã chuỗi bit và kiểm tra tính toàn vẹn của dữ liệu sau khi khôi phục.
 
-The fundamental correctness requirement is:
+Nguyên tắc đúng đắn cốt lõi của ứng dụng là:
 
-**Decompress(Compress(input)) = input**
+\[
+\operatorname{GiảiNén}(\operatorname{Nén}(X))=X
+\]
 
-The equality is defined at the byte level, so the recovered file does not need to be interpreted as text to verify correctness.
+Trong đó, \(X\) là dữ liệu ban đầu. Hai tệp được xem là giống nhau khi nội dung của chúng trùng khớp hoàn toàn ở cấp độ byte, không phụ thuộc vào loại tệp hay cách diễn giải dữ liệu.
 
-## 3. System Architecture
+## 3. Kiến trúc chương trình
 
-The application is organized into independent modules to separate algorithmic logic, file processing, user interaction, and testing.
+Ứng dụng được tổ chức thành các mô-đun độc lập nhằm phân tách thuật toán cốt lõi, xử lý tệp, giao diện người dùng và hoạt động kiểm thử.
 
-| Module | Responsibility |
+| Mô-đun | Chức năng |
 |---|---|
-| `huffman_tree` | Builds the Huffman tree and generates symbol codes. |
-| `bit_io` | Reads and writes individual bits and manages bit-level buffering. |
-| `file_format` | Defines the compressed file header and metadata format. |
-| `codec` | Coordinates compression and decompression operations. |
-| `utils` | Provides shared utilities, such as timing and supporting functions. |
-| `ui` | Implements the interactive console interface and operation reports. |
-| `main` | Handles program entry, command-line arguments, and execution flow. |
-| `tests` | Verifies compression, decompression, error handling, and edge cases. |
-| `bench` | Measures compression and decompression performance. |
+| `huffman_tree` | Xây dựng cây Huffman và sinh mã cho từng ký hiệu. |
+| `bit_io` | Đọc, ghi từng bit và quản lý bộ đệm dữ liệu ở cấp độ bit. |
+| `file_format` | Định nghĩa cấu trúc phần đầu tệp và định dạng lưu trữ dữ liệu nén. |
+| `codec` | Điều phối quá trình nén và giải nén tệp. |
+| `utils` | Cung cấp các hàm tiện ích dùng chung, chẳng hạn như đo thời gian thực thi. |
+| `ui` | Xây dựng giao diện dòng lệnh tương tác và hiển thị kết quả xử lý. |
+| `main` | Quản lý điểm bắt đầu chương trình, tham số dòng lệnh và luồng thực thi. |
+| `tests` | Kiểm thử tính đúng đắn, khả năng xử lý lỗi và các trường hợp biên. |
+| `bench` | Đo lường hiệu năng nén và giải nén. |
 
-This modular design makes the application easier to maintain, test, and extend.
+Thiết kế theo mô-đun giúp chương trình dễ bảo trì, thuận tiện cho việc kiểm thử và có khả năng mở rộng trong tương lai.
 
-## 4. Technical Specifications
+## 4. Thông số kỹ thuật
 
-| Property | Description |
+| Thuộc tính | Mô tả |
 |---|---|
-| Programming language | C++ |
-| Language standard | C++17 |
-| Compression algorithm | Huffman Coding |
-| Compression type | Lossless |
-| Input types | Text and binary files |
-| Output format | Custom `.bin` archive |
-| Processing strategy | Block-based I/O |
-| Block size | 64 KB |
-| Data integrity | Checksum verification |
-| External dependencies | No third-party libraries required |
-| Build systems | CMake / Make, depending on the project configuration |
+| Ngôn ngữ lập trình | C++ |
+| Tiêu chuẩn ngôn ngữ | C++17 |
+| Thuật toán nén | Mã hóa Huffman |
+| Phương pháp nén | Nén không mất dữ liệu |
+| Dữ liệu đầu vào | Tệp văn bản và tệp nhị phân |
+| Định dạng đầu ra | Tệp nén `.bin` theo định dạng riêng |
+| Phương thức xử lý | Đọc và ghi dữ liệu theo từng khối |
+| Kích thước khối | 64 KB |
+| Kiểm tra dữ liệu | Sử dụng checksum |
+| Thư viện bên ngoài | Không yêu cầu thư viện nén của bên thứ ba |
+| Công cụ xây dựng | CMake hoặc Make, tùy cấu hình dự án |
 
-**Note:** Huffman coding does not guarantee that every file will become smaller. For small files or data with an unfavorable frequency distribution, metadata and coding overhead may cause the compressed file to be larger than the original.
+**Lưu ý:** Thuật toán Huffman không đảm bảo mọi tệp đều có dung lượng nhỏ hơn sau khi nén. Đối với tệp nhỏ hoặc dữ liệu không phù hợp, phần thông tin phụ trợ của định dạng lưu trữ có thể khiến tệp sau nén lớn hơn tệp ban đầu.
 
-## 5. Requirements
+## 5. Yêu cầu hệ thống
 
-To build and run the application, you need:
+Để biên dịch và chạy chương trình, cần chuẩn bị:
 
-- A C++17-compatible compiler, such as GCC or a compatible compiler toolchain.
-- CMake and/or Make, depending on the build configuration.
-- A terminal or command prompt.
+- Trình biên dịch hỗ trợ C++17, chẳng hạn GCC.
+- CMake và/hoặc Make, tùy theo cấu hình xây dựng của dự án.
+- Terminal hoặc cửa sổ dòng lệnh để thực thi chương trình.
 
-The project does not require third-party compression libraries.
+Ứng dụng không yêu cầu cài đặt các thư viện nén dữ liệu của bên thứ ba.
 
-## 6. Build and Run
+## 6. Cài đặt và biên dịch
 
-Clone the repository:
+### Bước 1. Tải mã nguồn
 
 ```bash
 git clone <repository-url>
 cd HuffmanCompressionTool
 ```
 
-### Build with CMake
+Thay `<repository-url>` bằng địa chỉ kho lưu trữ Git thực tế của dự án.
 
-If the repository contains a `CMakeLists.txt` file:
+### Bước 2. Biên dịch bằng CMake
+
+Nếu dự án có tệp `CMakeLists.txt`, sử dụng các lệnh:
 
 ```bash
 cmake -S . -B build
 cmake --build build
 ```
 
-Run the executable generated in the build directory. The exact executable path depends on the operating system and build configuration.
+Sau khi biên dịch thành công, tệp thực thi sẽ được tạo trong thư mục xây dựng tương ứng với hệ điều hành và cấu hình biên dịch.
 
-### Build with Make
+### Biên dịch bằng Make
 
-If the repository provides a compatible `Makefile`:
+Nếu dự án cung cấp `Makefile` tương thích, có thể sử dụng:
 
 ```bash
 make
 make test
 ```
 
-Use the build method supported by the checked-out project. The CMake and Make commands above assume their corresponding configuration files and targets are present.
+Lệnh `make test` dùng để chạy bộ kiểm thử nếu mục tiêu này đã được cấu hình trong dự án.
 
-## 7. Usage
+**Lưu ý:** Chỉ sử dụng phương thức xây dựng tương ứng với các tệp cấu hình thực tế trong kho mã nguồn.
 
-Huffman Archiver supports command-line operations and an interactive console menu.
+## 7. Hướng dẫn sử dụng
 
-### Command-line interface
+Huffman Archiver hỗ trợ thao tác thông qua giao diện dòng lệnh và menu tương tác trên cửa sổ dòng lệnh.
 
-The following examples illustrate the intended command syntax.
+### 7.1. Nén tệp
 
-**Compress a file**
+Ví dụ nén tệp `input.txt` thành `output.bin`:
 
 ```bash
 huffman c input.txt -o output.bin
 ```
 
-**Decompress a file**
+### 7.2. Giải nén tệp
+
+Ví dụ khôi phục dữ liệu từ `output.bin` thành `restored.txt`:
 
 ```bash
 huffman d output.bin -o restored.txt
 ```
 
-**Inspect a compressed file**
+### 7.3. Xem thông tin tệp nén
 
 ```bash
 huffman --info output.bin
 ```
 
-Paths containing spaces should be enclosed in quotation marks:
+Chức năng này được thiết kế để hiển thị thông tin lưu trữ của tệp nén mà không cần thực hiện toàn bộ quá trình giải nén.
+
+### 7.4. Xử lý đường dẫn có dấu cách
+
+Đối với đường dẫn chứa dấu cách, cần đặt đường dẫn trong dấu ngoặc kép:
 
 ```bash
-huffman c "my document.txt" -o "compressed file.bin"
+huffman c "tai lieu hoc tap.txt" -o "tep da nen.bin"
 ```
 
-Replace `huffman` with the executable name or path produced by your build configuration. The commands assume that the corresponding CLI options are implemented in the current version.
+Trong các ví dụ trên, `huffman` là tên minh họa của tệp thực thi. Cần thay bằng tên hoặc đường dẫn thực tế sau khi biên dịch. Các tham số dòng lệnh phải tương ứng với những chức năng đã được triển khai trong phiên bản hiện tại.
 
-### Interactive console interface
+### 7.5. Sử dụng giao diện tương tác
 
-Launch the application and follow the on-screen menu to select an operation, specify file paths, and view the result.
+Khởi chạy chương trình và thực hiện theo các lựa chọn được hiển thị trên màn hình để nén tệp, giải nén tệp hoặc xem thông tin liên quan.
 
-Available operations depend on the features implemented in the current build.
+Các chức năng cụ thể phụ thuộc vào phiên bản chương trình đang sử dụng.
 
-## 8. Testing and Validation
+## 8. Kiểm thử và xác minh
 
-Testing focuses on the correctness of the compression and decompression pipeline, as well as the application's ability to handle exceptional inputs.
+Bộ kiểm thử tập trung đánh giá tính đúng đắn của quá trình nén, giải nén và khả năng xử lý các tình huống bất thường.
 
-Important test cases include:
+Các trường hợp cần được kiểm thử bao gồm:
 
-- Empty files and single-byte files.
-- Files containing all 256 possible byte values.
-- Files containing repeated symbols.
-- Text files and arbitrary binary data.
-- Inputs smaller than one processing block.
-- Large files and deeply structured Huffman trees.
-- Truncated or malformed archive headers.
-- Unsupported format versions.
-- Corrupted compressed data and checksum mismatches.
-- Files for which compression increases the output size.
+- Tệp rỗng và tệp chỉ có một byte.
+- Tệp chứa đầy đủ 256 giá trị byte có thể có.
+- Tệp chứa các ký hiệu lặp lại nhiều lần.
+- Tệp văn bản và dữ liệu nhị phân bất kỳ.
+- Tệp có kích thước nhỏ hơn một khối xử lý.
+- Tệp lớn và cây Huffman có độ sâu lớn.
+- Phần đầu tệp bị cắt cụt hoặc sai cấu trúc.
+- Phiên bản định dạng không được hỗ trợ.
+- Dữ liệu nén bị thay đổi và checksum không khớp.
+- Trường hợp tệp sau nén có dung lượng lớn hơn ban đầu.
 
-The primary correctness criterion is byte-for-byte equality between the original file and the decompressed result.
+Tiêu chí xác minh quan trọng nhất là nội dung tệp sau giải nén phải trùng khớp hoàn toàn với tệp ban đầu.
 
-Run the project's test suite using the supported test command, for example:
+Có thể chạy bộ kiểm thử bằng lệnh sau nếu dự án đã cấu hình mục tiêu tương ứng:
 
 ```bash
 make test
 ```
 
-A successful test run should report the actual results of all executed test cases. Test coverage and passing counts should be documented only after they have been verified against the current implementation.
+Kết quả kiểm thử cần phản ánh đúng số lượng trường hợp đã thực thi và số trường hợp đạt hoặc không đạt. Không nên công bố số liệu kiểm thử khi chưa xác minh bằng mã nguồn hiện tại.
 
-## 9. Performance Evaluation
+## 9. Đánh giá hiệu năng
 
-The `bench/` module is intended to evaluate compression and decompression throughput using representative input files.
+Mô-đun `bench/` được sử dụng để đánh giá tốc độ nén và giải nén trên các tệp dữ liệu có kích thước khác nhau.
 
-Performance measurements can include:
+Các chỉ số có thể được sử dụng để đánh giá bao gồm:
 
-- Input file size.
-- Compressed file size.
-- Compression ratio.
-- Compression throughput in MB/s.
-- Decompression throughput in MB/s.
-- Execution time before and after optimization.
+- Kích thước tệp ban đầu.
+- Kích thước tệp sau nén.
+- Tỷ lệ dung lượng sau nén so với ban đầu.
+- Tốc độ nén, tính bằng MB/s.
+- Tốc độ giải nén, tính bằng MB/s.
+- Thời gian thực thi trước và sau khi tối ưu.
 
-The compression ratio can be expressed as:
+Tỷ lệ dung lượng sau nén được tính theo công thức:
 
 \[
-R = \frac{S_c}{S_o}\times 100\%
+R=\frac{S_c}{S_o}\times100\%
 \]
 
-where:
+Trong đó:
 
-- \(S_c\) is the compressed file size.
-- \(S_o\) is the original file size.
+- \(S_c\): dung lượng tệp sau nén.
+- \(S_o\): dung lượng tệp ban đầu.
+- \(R\): tỷ lệ dung lượng sau nén so với ban đầu.
 
-A lower ratio indicates a smaller compressed output relative to the original file. Performance comparisons should use the same input data, hardware, compiler settings, and measurement procedure.
+Giá trị \(R\) càng thấp thì dung lượng tương đối của tệp sau nén càng nhỏ. Khi so sánh hiệu năng, cần sử dụng cùng dữ liệu đầu vào, cùng môi trường phần cứng, cùng cấu hình biên dịch và phương pháp đo thống nhất.
 
-## 10. Limitations
+## 10. Hạn chế
 
-- Huffman coding is a general-purpose lossless coding technique, not a universal guarantee of file size reduction.
-- The compression ratio depends on the frequency distribution of the input bytes and the overhead of the archive format.
-- The application can decompress only archives that conform to its supported file format versions.
-- Checksum verification helps detect data corruption but does not provide cryptographic authentication.
-- Compression and decompression performance depends on file characteristics, hardware, and compiler optimization settings.
+- Huffman là thuật toán nén không mất dữ liệu nhưng không đảm bảo giảm dung lượng đối với mọi loại tệp.
+- Hiệu quả nén phụ thuộc vào phân bố tần suất byte và lượng thông tin phụ trợ cần lưu trữ.
+- Chương trình chỉ có thể giải nén các tệp tuân theo những phiên bản định dạng được hỗ trợ.
+- Checksum giúp phát hiện một số trường hợp dữ liệu bị hỏng hoặc thay đổi, nhưng không thay thế cơ chế xác thực mật mã.
+- Tốc độ xử lý phụ thuộc vào kích thước, đặc điểm dữ liệu, phần cứng và tùy chọn tối ưu của trình biên dịch.
 
-## 11. Educational Value
+## 11. Giá trị học thuật
 
-Huffman Archiver provides a practical example of several fundamental computer science concepts:
+Huffman Archiver là ví dụ thực hành về việc áp dụng kiến thức khoa học máy tính vào xây dựng một ứng dụng hoàn chỉnh.
 
-- Greedy algorithms and priority queues.
-- Binary trees and tree traversal.
-- Frequency tables and symbol encoding.
-- Bitwise operations and bit-level I/O.
-- Binary file formats and metadata.
-- Memory-efficient file processing.
-- Error handling and data integrity verification.
-- Modular software design and automated testing.
+Thông qua dự án, người học có thể củng cố các kiến thức và kỹ năng sau:
 
-The project is suitable for studying data structures, algorithms, file processing, and the engineering principles behind a small compression utility.
+- Giải thuật tham lam và hàng đợi ưu tiên.
+- Cây nhị phân và các phương pháp duyệt cây.
+- Thống kê tần suất và mã hóa ký hiệu.
+- Phép toán bit và xử lý dữ liệu ở cấp độ bit.
+- Đọc, ghi tệp nhị phân và thiết kế định dạng dữ liệu.
+- Quản lý bộ nhớ và xử lý tệp theo khối.
+- Phát hiện lỗi và kiểm tra tính toàn vẹn dữ liệu.
+- Thiết kế phần mềm theo mô-đun và kiểm thử tự động.
 
-## 12. Project Status
+Dự án phù hợp cho mục đích học tập, nghiên cứu thuật toán, thực hành lập trình C++ và tìm hiểu nguyên lý xây dựng công cụ nén dữ liệu.
 
-Huffman Archiver is developed as a modular C++17 project. Features, supported archive versions, test coverage, and performance results should be considered according to the implementation available in the current repository.
+## 12. Trạng thái dự án
 
-## License
+Huffman Archiver được phát triển theo hướng mô-đun hóa bằng C++17. Các tính năng, phiên bản định dạng được hỗ trợ, kết quả kiểm thử và số liệu hiệu năng cần được xác định dựa trên phiên bản mã nguồn thực tế trong kho lưu trữ.
 
-Add the project's license information here if a license has been selected.
+## Giấy phép
 
+Bổ sung thông tin giấy phép tại đây sau khi dự án thống nhất lựa chọn giấy phép phân phối mã nguồn.
