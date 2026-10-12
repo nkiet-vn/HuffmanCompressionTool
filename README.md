@@ -1,128 +1,243 @@
 # HuffmanCompressionTool
-## 1. Giới thiệu
 
-**Huffman Archiver** nén một tệp bất kỳ (văn bản hoặc nhị phân) thành tệp `.bin` nhỏ hơn
-và phục hồi lại **chính xác từng byte** khi giải nén. Dự án được viết bằng C++17 thuần,
-không phụ thuộc thư viện ngoài, tổ chức thành các module tách biệt để dễ đọc, kiểm thử và mở rộng.
+**Huffman Archiver** is a lightweight file compression and decompression application written in standard C++17. It uses **Huffman Coding**, a lossless compression algorithm, to reduce file size while preserving the original data exactly.
 
-Mục tiêu thiết kế:
+The application supports both text and binary files, uses a custom binary file format, and verifies data integrity during decompression.
 
-- **Đúng đắn:** nội dung phục hồi giống hệt bản gốc, được xác minh bằng checksum.
-- **Ổn định:** xử lý theo khối 64 KB nên tệp lớn không làm tràn bộ nhớ; báo lỗi rõ ràng với tệp hỏng.
-- **Rõ ràng về mặt học thuật:** thể hiện đầy đủ cây Huffman, hàng đợi ưu tiên, bảng bit và các phép toán Bitwise.
+## 1. Overview
 
-## 1. Bảng tổng hợp phân công
+Huffman Archiver demonstrates the practical implementation of a lossless compression system, combining data structures, bitwise operations, binary file processing, and algorithm design.
 
-| Thành viên | Vai trò | Mảng phụ trách | Nhánh chính | Tệp chạm vào | 
-|---|---|---|---|---|
-| **Member 1** | Tech Lead + Core | `huffman_tree`, `bit_io` | `feature/IF-01-tree-determinism`, `feature/IF-02-bitio-hardening` | `huffman_tree.cpp/.hpp`, `bit_io.hpp` | 
-| **Member 2** | Format + Codec | `file_format`, `codec` | `feature/IF-03-header-v2`, `feature/IF-04-codec-progress` | `file_format.cpp/.hpp`, `codec.cpp/.hpp` | 
-| **Member 3** | CLI + UI | `main`, `ui` | `feature/IF-05-cli-ext`, `feature/IF-06-ui-report` | `main.cpp`, `ui.cpp/.hpp` | 
-| **Member 4** | QA + Test + CI | `tests/` + CI | `feature/IF-07-test-suite`, `feature/IF-08-ci` | `tests/*.cpp`, `.github/workflows/ci.yml` | 
-| **Member 5** | Docs + Benchmark + Hiệu năng | `README`, `MAPCODE`, `bench` | `docs/IF-09-mapcode`, `feature/IF-10-bench-parallel` | `MAPCODE.md`, `README.md`, `bench/` | 
+### Key Features
 
----
+- **Lossless compression:** Restores the original file byte-for-byte.
+- **Text and binary support:** Processes arbitrary file contents without assuming a specific file type.
+- **Huffman coding:** Builds a coding tree based on byte frequencies.
+- **Custom binary format:** Stores the metadata required for decompression.
+- **Data integrity verification:** Uses checksums to detect corrupted or modified data.
+- **Memory efficiency:** Processes files in blocks of 64 KB instead of loading the entire file into memory.
+- **Error handling:** Detects invalid input, corrupted headers, truncated files, and unsupported format versions.
+- **Command-line interface:** Supports compression, decompression, and inspection of compressed files.
+- **Console interface:** Provides an interactive menu and operation status information.
 
-## 2. Chi tiết nhiệm vụ theo từng người
+## 2. How It Works
 
-### MEMBER 1 — Tech Lead & Core Algorithm
-**Nhánh:** `feature/IF-01-tree-determinism` → `feature/IF-02-bitio-hardening`
+Huffman coding assigns variable-length binary codes to symbols according to their frequencies. More frequent symbols generally receive shorter codes, while less frequent symbols receive longer codes.
 
-| # | Nhiệm vụ | Hàm / vị trí cụ thể | Kết quả bàn giao (DoD) |
-|---|---|---|---|
-| 1.1 | Gộp `(freq, order)` thành comparator tường minh | `huffman_tree.cpp:13–18` — thay lambda rời bằng `struct NodeCmp` | `build()` cho cùng `pool_` với mọi thứ tự nạp |
-| 1.2 | Chứng minh cây xác định (determinism) | thêm `huffman_tree.hpp:20` overload `build(const FreqTable&)` | 2 lần build cùng freq ⇒ mã giống hệt, in ra để chứng minh |
-| 1.3 | Rà soát trường hợp biên cây 1 lá | `huffman_tree.cpp:28–32` (mã `"0"`) | Test `single` (1000 ký tự `a`) vẫn vòng tròn OK |
-| 1.4 | Bảo toàn DFS không đệ quy | `huffman_tree.cpp:46–58` | Tệp Fibonacci (>3 MB, cây sâu) không tràn stack |
-| 1.5 | Thêm API `bool isLeaf(int)`, `int depth()` cho UI/Test dùng | `huffman_tree.hpp:22–27` | API mới có comment, không phá API cũ |
-| 1.6 | Gia cố `BitWriter` chống bit sai | `bit_io.hpp:16–23` — `putBit` chỉ nhận `bit&1` | Thêm test gọi `putBit(2)` ⇒ chỉ ghi bit thấp |
-| 1.7 | Kiểm tra `BitReader` khi cạn khối giữa luồng | `bit_io.hpp:50–62` | Bit cuối tệp trả `-1`, không đọc rác |
-| 1.8 | Review + merge toàn bộ PR của Member 2–5 | — | Mỗi PR có comment review, ghi rõ lý do approve |
+The compression process consists of the following steps:
 
-**Lệnh kiểm tra:** `make test` (phải 9/9 ĐẠT) và `./huffman c tests/../../README.md out.bin`.
+1. **Frequency analysis:** Read the input file and count the frequency of each byte.
+2. **Tree construction:** Build a Huffman tree using a priority queue.
+3. **Code generation:** Traverse the tree to generate a binary code for each byte.
+4. **Bit encoding:** Encode the input data using the generated codes and write the resulting bits to a binary file.
+5. **Metadata storage:** Store the information required to reconstruct the coding tree and recover the original data.
 
----
+During decompression, the application reads the metadata, reconstructs the Huffman tree, decodes the compressed bitstream, and verifies the integrity of the recovered data.
 
-### MEMBER 2 — File Format & Codec Core
-**Nhánh:** `feature/IF-03-header-v2` → `feature/IF-04-codec-progress`
+The fundamental correctness requirement is:
 
-| # | Nhiệm vụ | Hàm / vị trí cụ thể | Kết quả bàn giao (DoD) |
-|---|---|---|---|
-| 2.1 | Thêm `formatVersion` vào `Header` | `file_format.hpp:11–15` (thêm field `u16 version = 1`) | Ghi ở offset 16, đọc lại và validate |
-| 2.2 | Ghi/đọc version | `writeHeader` `file_format.cpp:28–38`, `readHeader` `file_format.cpp:40–61` | Tệp v1 cũ vẫn đọc được (tương thích ngược) |
-| 2.3 | Từ chối version lạ | `readHeader` — ném `std::runtime_error` nếu `version > kFormatVersion` | Có ca test ở Member 4 |
-| 2.4 | Cập nhật bảng bố cục header trong comment | `file_format.hpp:2–4` + `MAPCODE.md` mục 3.4 | Tài liệu khớp mã nhị phân thật |
-| 2.5 | Tách 1 lượt đếm freq ra hàm riêng | `codec.cpp:24–37` → `namespace {}` hàm `countFreq(in, Header&)` | `compressFile` ngắn hơn, dễ test riêng |
-| 2.6 | Thêm callback tiến trình (tùy chọn) | `codec.hpp:22–23` thêm overload nhận `std::function<void(u64,u64)>` | CLI/UI có thể hiện tiến trình; API cũ giữ nguyên |
-| 2.7 | Rà soát điểm chạm hiệu năng | `codec.cpp:50–54` (vòng nén) và `codec.cpp:86–102` (vòng giải) | Tránh copy `std::vector<u8>` thừa trong `putCode` |
-| 2.8 | Bảo toàn kiểm tra checksum | `codec.cpp:106` — lệch ⇒ ném lỗi | Test "sửa 1 byte" vẫn FAIL đúng như mong đợi |
+**Decompress(Compress(input)) = input**
 
-**Lưu ý hợp đồng:** nếu đổi bố cục header, phải báo Member 4 cập nhật ca "sai magic" và Member 5 cập nhật `MAPCODE.md` mục 3.4.
+The equality is defined at the byte level, so the recovered file does not need to be interpreted as text to verify correctness.
 
----
+## 3. System Architecture
 
-### MEMBER 3 — CLI & Console UI
-**Nhánh:** `feature/IF-05-cli-ext` → `feature/IF-06-ui-report`
+The application is organized into independent modules to separate algorithmic logic, file processing, user interaction, and testing.
 
-| # | Nhiệm vụ | Hàm / vị trí cụ thể | Kết quả bàn giao (DoD) |
-|---|---|---|---|
-| 3.1 | Thêm chế độ `--info <file.bin>` | `main.cpp:26–34` + hàm mới `huff::readInfo()` | In header (size, checksum, số ký tự) mà **không** giải nén |
-| 3.2 | Hỗ trợ `-o` và đường dẫn có dấu cách | `main.cpp:10–15` (`usage`) | `huffman c "a b.txt" -o out.bin` chạy đúng |
-| 3.3 | Mã thoát rõ ràng (0/1/2) | `main.cpp:31–38` | Sai tham số ⇒ 2; lỗi runtime ⇒ 1; thành công ⇒ 0 |
-| 3.4 | Bật UTF-8 + ANSI tách thành hàm | `main.cpp:18–23` → `huff::ui::enableUtf8()` trong `ui.cpp` | Không còn code Windows thô trong `main` |
-| 3.5 | Thêm `ui::progress(pct)` | `ui.cpp` cạnh `bar()` dòng 25–30 | Dùng được callback của Member 2 (2.6) |
-| 3.6 | Thêm `symbolLabel` cho ký tự > 127 | `ui.cpp:38–46` | Hiện `0xNN` thay vì ký tự rác |
-| 3.7 | Thêm mục menu `[5]` xem thông tin tệp `.bin` | `ui.cpp:99–141` (`runMenu`) | Không phá luồng `[1]..[4]`, `[0]` hiện có |
-| 3.8 | Kiểm tra `report` khi tệp nhỏ hơn bản nén | `ui.cpp:66–97` (nhánh `saved < 0` dòng 79) | Thông báo "header làm tệp lớn hơn" vẫn hiện |
+| Module | Responsibility |
+|---|---|
+| `huffman_tree` | Builds the Huffman tree and generates symbol codes. |
+| `bit_io` | Reads and writes individual bits and manages bit-level buffering. |
+| `file_format` | Defines the compressed file header and metadata format. |
+| `codec` | Coordinates compression and decompression operations. |
+| `utils` | Provides shared utilities, such as timing and supporting functions. |
+| `ui` | Implements the interactive console interface and operation reports. |
+| `main` | Handles program entry, command-line arguments, and execution flow. |
+| `tests` | Verifies compression, decompression, error handling, and edge cases. |
+| `bench` | Measures compression and decompression performance. |
 
-**Ràng buộc:** `ui.cpp` được phép include `codec.hpp` + `utils.hpp`; **không** được để lõi include ngược lại `ui.hpp`.
+This modular design makes the application easier to maintain, test, and extend.
 
----
+## 4. Technical Specifications
 
-### MEMBER 4 — QA, Test Suite & CI
-**Nhánh:** `feature/IF-07-test-suite` → `feature/IF-08-ci`
+| Property | Description |
+|---|---|
+| Programming language | C++ |
+| Language standard | C++17 |
+| Compression algorithm | Huffman Coding |
+| Compression type | Lossless |
+| Input types | Text and binary files |
+| Output format | Custom `.bin` archive |
+| Processing strategy | Block-based I/O |
+| Block size | 64 KB |
+| Data integrity | Checksum verification |
+| External dependencies | No third-party libraries required |
+| Build systems | CMake / Make, depending on the project configuration |
 
-| # | Nhiệm vụ | Hàm / vị trí cụ thể | Kết quả bàn giao (DoD) |
-|---|---|---|---|
-| 4.1 | Thêm helper `expectThrow(name, fn)` | `tests/test_roundtrip.cpp:14–16` (cạnh macro `CHECK`) | Giảm lặp `try/catch` ở dòng 54–61 |
-| 4.2 | Ca test: đúng 1 byte mọi ký tự | mở rộng danh sách dòng 40–46 | 256 ca 1 byte đều vòng tròn OK |
-| 4.3 | Ca test: tệp nhỏ hơn 64 KB (1 khối) | `roundTrip()` dòng 22–29 | Bao phủ nhánh `gcount < kBufferSize` |
-| 4.4 | Ca test: header cắt cụt | `write` dòng 18–20 + `decompressFile` | Ném lỗi "bị cắt cụt / hỏng header" |
-| 4.5 | Ca test: `count > 256` | sửa byte thứ 17 của `.bin` | Ném lỗi "Header không hợp lệ" |
-| 4.6 | Ca test: version lạ (sau 2.1–2.3) | `.bin` có `version=99` | Bị từ chối |
-| 4.7 | Dọn tệp tạm ngay cả khi ném lỗi | `roundTrip` dòng 22–29 dùng RAII/`try` | Không rác `t_*.bin` sau `make test` |
-| 4.8 | Trả mã thoát 0/1 chuẩn cho CI | `main` test dòng 64–66 | `ctest` đọc được PASS/FAIL |
-| 4.9 | Thiết lập CI (Ubuntu + g++ 17) | `.github/workflows/ci.yml` (tệp mới) | Mỗi PR chạy `cmake --build` + `ctest` |
-| 4.10 | Ghi `make test` là lệnh xác minh chuẩn | `README.md` mục Build | Trùng với `MAPCODE.md` mục 6 |
+**Note:** Huffman coding does not guarantee that every file will become smaller. For small files or data with an unfavorable frequency distribution, metadata and coding overhead may cause the compressed file to be larger than the original.
 
-**DoD tổng:** bộ test hiện tại 9 ca → mở rộng tối thiểu 15 ca, **tất cả ĐẠT**; không ca nào bị "skip im lặng".
+## 5. Requirements
 
----
+To build and run the application, you need:
 
-### MEMBER 5 — Tài liệu, Benchmark & Hỗ trợ hiệu năng
-**Nhánh:** `docs/IF-09-mapcode` → `feature/IF-10-bench-parallel`
+- A C++17-compatible compiler, such as GCC or a compatible compiler toolchain.
+- CMake and/or Make, depending on the build configuration.
+- A terminal or command prompt.
 
-| # | Nhiệm vụ | Hàm / vị trí cụ thể | Kết quả bàn giao (DoD) |
-|---|---|---|---|
-| 5.1 | Đồng bộ `MAPCODE.md` sau mỗi merge | mục 2 (mục lục symbol), mục 5 (bảng "sửa gì vào đâu") | Số dòng/symbol khớp code sau merge |
-| 5.2 | Bổ sung bảng phân công vào tài liệu dự án | thêm link `README_TEAM.md` trong `README.md` | Người mới đọc 1 phút hiểu ai làm gì |
-| 5.3 | Viết `bench/bench.cpp` (tệp mới) | dùng `nowSeconds()` (`utils.cpp:22–25`) | In MB/s nén/giải cho 3 tệp mẫu |
-| 5.4 | Bộ dữ liệu mẫu để bench | `bench/data/` + script tạo tệp 1/10/100 MB | Tái lập được, không commit tệp lớn (dùng `.gitignore`) |
-| 5.5 | Báo cáo số liệu tăng tốc sau 2.7 | so sánh trước/sau tối ưu vòng bit | Bảng % tăng tốc, kèm cách đo |
-| 5.6 | Khảo sát nén song song theo khối (nghiên cứu) | `codec.cpp:19–65` phân tích khả năng `std::thread` | Tài liệu phân tích + quyết định làm/không làm |
-| 5.7 | (Tùy chọn) Thử nén song song 4 luồng | nhánh riêng `feature/IF-11-parallel` **chỉ khi** 5.6 kết luận khả thi | Có số đo; nếu không thắng thì đóng PR, giữ code cũ |
-| 5.8 | Rà soát tệp phát hành | `.gitignore`, `release/v1.0` | Bản phát hành không chứa `build/`, `*.bin`, `t_*` |
+The project does not require third-party compression libraries.
 
----
+## 6. Build and Run
 
-## 3. Lộ trình 4 Sprint (2 tuần/sprint)
+Clone the repository:
 
-| Sprint | Member 1 | Member 2 | Member 3 | Member 4 | Member 5 |
-|---|---|---|---|---|---|
-| **S1** (nền tảng) | IF-01 (1.1→1.4) | IF-03 (2.1→2.4) | IF-05 (3.1→3.4) | IF-07 (4.1→4.4) | IF-09 (5.1→5.2) |
-| **S2** (hoàn thiện) | IF-02 (1.5→1.7) | IF-04 (2.5→2.8) | IF-06 (3.5→3.8) | IF-07 (4.5→4.8) | IF-10 (5.3→5.4) |
-| **S3** (cứng hoá) | Review toàn bộ + fix | Fix lỗi từ test mới | Fix UX theo phản hồi | IF-08 (4.9→4.10) + regression | IF-10 (5.5→5.6) |
-| **S4** (phát hành) | `release/v1.0` + merge `main` | Đóng gói ví dụ | Quay video demo | Chạy full test trên CI | IF-11 (5.7) + IF-10 (5.8) |
+```bash
+git clone <repository-url>
+cd HuffmanCompressionTool
+```
 
----
+### Build with CMake
+
+If the repository contains a `CMakeLists.txt` file:
+
+```bash
+cmake -S . -B build
+cmake --build build
+```
+
+Run the executable generated in the build directory. The exact executable path depends on the operating system and build configuration.
+
+### Build with Make
+
+If the repository provides a compatible `Makefile`:
+
+```bash
+make
+make test
+```
+
+Use the build method supported by the checked-out project. The CMake and Make commands above assume their corresponding configuration files and targets are present.
+
+## 7. Usage
+
+Huffman Archiver supports command-line operations and an interactive console menu.
+
+### Command-line interface
+
+The following examples illustrate the intended command syntax.
+
+**Compress a file**
+
+```bash
+huffman c input.txt -o output.bin
+```
+
+**Decompress a file**
+
+```bash
+huffman d output.bin -o restored.txt
+```
+
+**Inspect a compressed file**
+
+```bash
+huffman --info output.bin
+```
+
+Paths containing spaces should be enclosed in quotation marks:
+
+```bash
+huffman c "my document.txt" -o "compressed file.bin"
+```
+
+Replace `huffman` with the executable name or path produced by your build configuration. The commands assume that the corresponding CLI options are implemented in the current version.
+
+### Interactive console interface
+
+Launch the application and follow the on-screen menu to select an operation, specify file paths, and view the result.
+
+Available operations depend on the features implemented in the current build.
+
+## 8. Testing and Validation
+
+Testing focuses on the correctness of the compression and decompression pipeline, as well as the application's ability to handle exceptional inputs.
+
+Important test cases include:
+
+- Empty files and single-byte files.
+- Files containing all 256 possible byte values.
+- Files containing repeated symbols.
+- Text files and arbitrary binary data.
+- Inputs smaller than one processing block.
+- Large files and deeply structured Huffman trees.
+- Truncated or malformed archive headers.
+- Unsupported format versions.
+- Corrupted compressed data and checksum mismatches.
+- Files for which compression increases the output size.
+
+The primary correctness criterion is byte-for-byte equality between the original file and the decompressed result.
+
+Run the project's test suite using the supported test command, for example:
+
+```bash
+make test
+```
+
+A successful test run should report the actual results of all executed test cases. Test coverage and passing counts should be documented only after they have been verified against the current implementation.
+
+## 9. Performance Evaluation
+
+The `bench/` module is intended to evaluate compression and decompression throughput using representative input files.
+
+Performance measurements can include:
+
+- Input file size.
+- Compressed file size.
+- Compression ratio.
+- Compression throughput in MB/s.
+- Decompression throughput in MB/s.
+- Execution time before and after optimization.
+
+The compression ratio can be expressed as:
+
+\[
+R = \frac{S_c}{S_o}\times 100\%
+\]
+
+where:
+
+- \(S_c\) is the compressed file size.
+- \(S_o\) is the original file size.
+
+A lower ratio indicates a smaller compressed output relative to the original file. Performance comparisons should use the same input data, hardware, compiler settings, and measurement procedure.
+
+## 10. Limitations
+
+- Huffman coding is a general-purpose lossless coding technique, not a universal guarantee of file size reduction.
+- The compression ratio depends on the frequency distribution of the input bytes and the overhead of the archive format.
+- The application can decompress only archives that conform to its supported file format versions.
+- Checksum verification helps detect data corruption but does not provide cryptographic authentication.
+- Compression and decompression performance depends on file characteristics, hardware, and compiler optimization settings.
+
+## 11. Educational Value
+
+Huffman Archiver provides a practical example of several fundamental computer science concepts:
+
+- Greedy algorithms and priority queues.
+- Binary trees and tree traversal.
+- Frequency tables and symbol encoding.
+- Bitwise operations and bit-level I/O.
+- Binary file formats and metadata.
+- Memory-efficient file processing.
+- Error handling and data integrity verification.
+- Modular software design and automated testing.
+
+The project is suitable for studying data structures, algorithms, file processing, and the engineering principles behind a small compression utility.
+
+## 12. Project Status
+
+Huffman Archiver is developed as a modular C++17 project. Features, supported archive versions, test coverage, and performance results should be considered according to the implementation available in the current repository.
+
+## License
+
+Add the project's license information here if a license has been selected.
 
