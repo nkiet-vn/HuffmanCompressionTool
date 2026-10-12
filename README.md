@@ -194,34 +194,21 @@ make test
 
 Kết quả kiểm thử cần phản ánh đúng số lượng trường hợp đã thực thi và số trường hợp đạt hoặc không đạt. Không nên công bố số liệu kiểm thử khi chưa xác minh bằng mã nguồn hiện tại.
 
-## 9. Đánh giá hiệu năng
+## 9. Quy trình Git
 
-Mô-đun `bench/` được sử dụng để đánh giá tốc độ nén và giải nén trên các tệp dữ liệu có kích thước khác nhau.
+- `main`: nhánh ổn định, chỉ merge từ `develop`
+- `develop`: nhánh tích hợp, các feature merge vào đây
+- `feature/...`: nhánh làm việc cho từng công việc
 
-Các chỉ số có thể được sử dụng để đánh giá bao gồm:
+Commit message luôn bắt đầu bằng mã ticket, ví dụ `DSA-1: add README`.
 
-- Kích thước tệp ban đầu.
-- Kích thước tệp sau nén.
-- Tỷ lệ dung lượng sau nén so với ban đầu.
-- Tốc độ nén, tính bằng MB/s.
-- Tốc độ giải nén, tính bằng MB/s.
-- Thời gian thực thi trước và sau khi tối ưu.
+## 10. Quy ước đặt tên
 
-Tỷ lệ dung lượng sau nén được tính theo công thức:
+- Biến, hàm: camelCase, ví dụ `writeBit`, `freqTable`
+- Lớp: PascalCase, ví dụ `BitWriter`, `BitReader`
+- File: camelCase, ví dụ `bitWriter.h`
 
-\[
-R=\frac{S_c}{S_o}\times100\%
-\]
-
-Trong đó:
-
-- \(S_c\): dung lượng tệp sau nén.
-- \(S_o\): dung lượng tệp ban đầu.
-- \(R\): tỷ lệ dung lượng sau nén so với ban đầu.
-
-Giá trị \(R\) càng thấp thì dung lượng tương đối của tệp sau nén càng nhỏ. Khi so sánh hiệu năng, cần sử dụng cùng dữ liệu đầu vào, cùng môi trường phần cứng, cùng cấu hình biên dịch và phương pháp đo thống nhất.
-
-## 10. Hạn chế
+## 11. Hạn chế
 
 - Huffman là thuật toán nén không mất dữ liệu nhưng không đảm bảo giảm dung lượng đối với mọi loại tệp.
 - Hiệu quả nén phụ thuộc vào phân bố tần suất byte và lượng thông tin phụ trợ cần lưu trữ.
@@ -229,7 +216,7 @@ Giá trị \(R\) càng thấp thì dung lượng tương đối của tệp sau 
 - Checksum giúp phát hiện một số trường hợp dữ liệu bị hỏng hoặc thay đổi, nhưng không thay thế cơ chế xác thực mật mã.
 - Tốc độ xử lý phụ thuộc vào kích thước, đặc điểm dữ liệu, phần cứng và tùy chọn tối ưu của trình biên dịch.
 
-## 11. Giá trị học thuật
+## 12. Giá trị học thuật
 
 Huffman Archiver là ví dụ thực hành về việc áp dụng kiến thức khoa học máy tính vào xây dựng một ứng dụng hoàn chỉnh.
 
@@ -246,10 +233,8 @@ Thông qua dự án, người học có thể củng cố các kiến thức và
 
 Dự án phù hợp cho mục đích học tập, nghiên cứu thuật toán, thực hành lập trình C++ và tìm hiểu nguyên lý xây dựng công cụ nén dữ liệu.
 
-## 12. Trạng thái dự án
+## 13. Trạng thái dự án
 
 Huffman Archiver được phát triển theo hướng mô-đun hóa bằng C++17. Các tính năng, phiên bản định dạng được hỗ trợ, kết quả kiểm thử và số liệu hiệu năng cần được xác định dựa trên phiên bản mã nguồn thực tế trong kho lưu trữ.
 
-## Giấy phép
 
-Bổ sung thông tin giấy phép tại đây sau khi dự án thống nhất lựa chọn giấy phép phân phối mã nguồn.
