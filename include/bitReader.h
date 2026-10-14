@@ -1,16 +1,28 @@
-#pragma once
+#ifndef BIT_READER_H
+#define BIT_READER_H
+
+#include <fstream>
+#include <string>
+#include <stdexcept>
 #include <cstdint>
-#include <istream>
 
-// Đọc từng bit từ stream. Thứ tự bit: MSB trước trong mỗi byte.
 class BitReader {
-public:
-    explicit BitReader(std::istream& in);
-    int readBit();            // trả về 0 hoặc 1
-    bool isEnd();             // true khi hết dữ liệu
-
 private:
-    std::istream& in_;
-    uint8_t buffer_ = 0;
-    int bitCount_ = 0;        // số bit còn lại trong buffer_
+    std::ifstream file;
+    uint8_t buffer;
+    int bitIndex; // Quản lý vị trí bit từ 7 (MSB) xuống 0 (LSB)
+
+    void loadNextByte();
+
+public:
+    explicit BitReader(const std::string& filename);
+    ~BitReader();
+
+    BitReader(const BitReader&) = delete;
+    BitReader& operator=(const BitReader&) = delete;
+
+    int readBit();  // Đọc 1 bit (trả về 0 hoặc 1, trả về -1 nếu hết file)
+    bool isEnd();   // Kiểm tra đã hết dữ liệu chưa
 };
+
+#endif // BIT_READER_H
