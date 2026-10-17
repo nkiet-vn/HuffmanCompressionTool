@@ -1,5 +1,5 @@
 #undef NDEBUG
-#include "../include/bit_io.hpp"
+#include "../include/bitWriter.h"
 #include <cassert>
 #include <iostream>
 #include <sstream>

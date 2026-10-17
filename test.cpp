@@ -4,7 +4,7 @@
 #include <random>
 #include <vector>
 
-#include "min_heap.h"
+#include "include/min_heap.h"
 
 // DoD: push 100 phần tử, pop luôn ra phần tử nhỏ nhất.
 static void testHundredElements() {
