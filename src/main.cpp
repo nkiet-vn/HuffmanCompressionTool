@@ -2,6 +2,8 @@
 #include <fstream>
 #include <string>
 #include <cstdint>
+#include "decompressor.h" // Thêm header giải nén của DSA-71
+
 using namespace std;
 
 bool countFrequency(const string& fileName, uint64_t freq[256]) {
@@ -177,7 +179,25 @@ bool comparePayload(const string& source, const string& binFile) {
     }
 }
 
-int main() {
+
+int main(int argc, char* argv[]) {
+    if (argc >= 4) {
+        string mode = argv[1];
+        string inputPath = argv[2];
+        string outputPath = argv[3];
+
+        if (mode == "-d") {
+            cout << "Dang giai nen: " << inputPath << " -> " << outputPath << endl;
+            if (Decompressor::decompress(inputPath, outputPath)) {
+                cout << "Giai nen thành cong!\n";
+                return 0;
+            } else {
+                cerr << "Giai nen that bai!\n";
+                return 1;
+            }
+        }
+    }
+
     string inputFile, outputFile;
 
     cout << "Nhap ten file nguon: ";
