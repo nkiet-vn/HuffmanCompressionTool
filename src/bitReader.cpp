@@ -1,4 +1,4 @@
-#include "bit_reader.h"
+#include "bitReader.h"
 
 BitReader::BitReader(const std::string& filename) : buffer(0), bitIndex(-1) {
     file.open(filename, std::ios::binary);

@@ -6,5 +6,27 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
-# Các file .cpp sẽ được thêm ở các ticket sau(DSA-2 đến DSA-5).
+add_library(huffman_core
+    src/huffmanTree.cpp
+    src/bitReader.cpp
+    src/bitWriter.cpp
+    src/compressor.cpp
+    src/decompressor.cpp
+)
+
 add_executable(huffman src/main.cpp)
+target_link_libraries(huffman PRIVATE huffman_core)
+
+enable_testing()
+
+add_executable(test_huffmanTree tests/test_huffmanTree.cpp)
+target_link_libraries(test_huffmanTree PRIVATE huffman_core)
+add_test(NAME huffmanTree COMMAND test_huffmanTree)
+
+add_executable(test_bitReader tests/test_bitReader.cpp)
+target_link_libraries(test_bitReader PRIVATE huffman_core)
+add_test(NAME bitReader COMMAND test_bitReader)
+
+add_executable(test_roundtrip tests/test_roundtrip.cpp)
+target_link_libraries(test_roundtrip PRIVATE huffman_core)
+add_test(NAME roundtrip COMMAND test_roundtrip)
