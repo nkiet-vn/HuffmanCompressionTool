@@ -24,8 +24,8 @@ static std::string readFile(const std::string& path) {
 static void roundTrip(const std::string& name, const std::string& content) {
     const std::string src = "rt_src.tmp", bin = "rt_out.bin", dst = "rt_dst.tmp";
     writeFile(src, content);
-    CHECK(Compressor::compress(src, bin), name + ": nen that bai");
-    CHECK(Decompressor::decompress(bin, dst), name + ": giai nen that bai");
+    CHECK(Compressor().compress(src, bin), name + ": nen that bai");
+    CHECK(Decompressor().decompress(bin, dst), name + ": giai nen that bai");
     CHECK(readFile(dst) == content, name + ": du lieu khong khop tu dau den cuoi");
     std::remove(src.c_str()); std::remove(bin.c_str()); std::remove(dst.c_str());
 }
@@ -33,7 +33,7 @@ static void roundTrip(const std::string& name, const std::string& content) {
 static void expectDecodeFails(const std::string& name, const std::string& bytes) {
     const std::string bin = "rt_bad.bin", dst = "rt_bad_out.tmp";
     writeFile(bin, bytes);
-    CHECK(!Decompressor::decompress(bin, dst), name + ": le ra phai bao loi");
+    CHECK(!Decompressor().decompress(bin, dst), name + ": le ra phai bao loi");
     std::remove(bin.c_str()); std::remove(dst.c_str());
 }
 

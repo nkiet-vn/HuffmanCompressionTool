@@ -101,7 +101,7 @@ bool compressFile(const std::string& inPath, const std::string& outPath, std::st
             return false;
         }
     }
-    if (!Compressor::compress(inPath, outPath)) {
+    if (!Compressor().compress(inPath, outPath)) {
         error = "Nen that bai: " + inPath;
         return false;
     }

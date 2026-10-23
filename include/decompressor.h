@@ -2,11 +2,12 @@
 #define DECOMPRESSOR_H
 
 #include <string>
+#include "ICodec.h"
 
 // Giải nén file .bin (định dạng HUF1, xem docs/fileFormat.md).
-class Decompressor {
+class Decompressor : public IDecompressor {
 public:
-    static bool decompress(const std::string& inputBinPath, const std::string& outputTxtPath);
+    bool decompress(const std::string& inputBinPath, const std::string& outputTxtPath) override;
 };
 
 #endif // DECOMPRESSOR_H

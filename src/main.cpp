@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) {
 
         if (mode == "-c") {
             cout << "Dang nen: " << inputPath << " -> " << outputPath << endl;
-            if (Compressor::compress(inputPath, outputPath)) {
+            if (Compressor().compress(inputPath, outputPath)) {
                 cout << "Nen thanh cong!\n";
                 return 0;
             }
@@ -23,7 +23,7 @@ int main(int argc, char* argv[]) {
         }
         if (mode == "-d") {
             cout << "Dang giai nen: " << inputPath << " -> " << outputPath << endl;
-            if (Decompressor::decompress(inputPath, outputPath)) {
+            if (Decompressor().decompress(inputPath, outputPath)) {
                 cout << "Giai nen thanh cong!\n";
                 return 0;
             }
@@ -39,7 +39,7 @@ int main(int argc, char* argv[]) {
     cout << "Nhap ten file .bin dau ra: ";
     getline(cin, outputFile);
 
-    if (!Compressor::compress(inputFile, outputFile)) {
+    if (!Compressor().compress(inputFile, outputFile)) {
         cout << "Tao file .bin that bai!\n";
         return 1;
     }

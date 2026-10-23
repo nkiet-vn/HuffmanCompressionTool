@@ -2,11 +2,12 @@
 #define COMPRESSOR_H
 
 #include <string>
+#include "ICodec.h"
 
 // Nén file thành định dạng HUF1 (xem docs/fileFormat.md).
-class Compressor {
+class Compressor : public ICompressor {
 public:
-    static bool compress(const std::string& inputPath, const std::string& outputBinPath);
+    bool compress(const std::string& inputPath, const std::string& outputBinPath) override;
 };
 
 #endif // COMPRESSOR_H
