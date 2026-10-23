@@ -1,128 +1,123 @@
 #include "decompressor.h"
-#include "bitReader.h"
+#include "huffmanTree.h"
 #include <fstream>
 #include <iostream>
-#include <queue>
+#include <iterator>
+#include <vector>
 
-// Hàm đọc uint64_t theo dạng Little-Endian
-static bool readUint64LE(std::ifstream& file, uint64_t& value) {
-    value = 0;
-    for (int i = 0; i < 8; i++) {
-        char ch;
-        if (!file.get(ch)) return false;
-        uint64_t byte = static_cast<unsigned char>(ch);
-        value |= (byte << (i * 8));
-    }
-    return true;
+namespace {
+
+bool fail(const char* msg) {
+    std::cerr << "Loi: " << msg << "\n";
+    return false;
 }
 
-// Struct so sánh cho priority_queue xây cây Huffman
-struct CompareNode {
-    bool operator()(const std::shared_ptr<HuffmanNode>& a, const std::shared_ptr<HuffmanNode>& b) const {
-        return a->freq > b->freq;
-    }
-};
-
-// Hàm dựng cây Huffman từ bảng tần số
-static std::shared_ptr<HuffmanNode> buildHuffmanTree(const uint64_t freq[256], uint64_t& totalSymbols) {
-    std::priority_queue<std::shared_ptr<HuffmanNode>, 
-                        std::vector<std::shared_ptr<HuffmanNode>>, 
-                        CompareNode> pq;
-
-    totalSymbols = 0;
-    for (int i = 0; i < 256; i++) {
-        if (freq[i] > 0) {
-            pq.push(std::make_shared<HuffmanNode>(static_cast<uint8_t>(i), freq[i]));
-            totalSymbols += freq[i];
-        }
-    }
-
-    if (pq.empty()) return nullptr;
-
-    // Trường hợp file chỉ có 1 loại ký tự duy nhất
-    if (pq.size() == 1) {
-        auto singleLeaf = pq.top();
-        auto root = std::make_shared<HuffmanNode>(singleLeaf->freq, singleLeaf, nullptr);
-        return root;
-    }
-
-    while (pq.size() > 1) {
-        auto left = pq.top(); pq.pop();
-        auto right = pq.top(); pq.pop();
-
-        auto parent = std::make_shared<HuffmanNode>(left->freq + right->freq, left, right);
-        pq.push(parent);
-    }
-
-    return pq.top();
+uint64_t readLE(const std::vector<uint8_t>& data, size_t pos, int bytes) {
+    uint64_t value = 0;
+    for (int i = 0; i < bytes; i++)
+        value |= static_cast<uint64_t>(data[pos + i]) << (8 * i);
+    return value;
 }
+
+} // namespace
 
 bool Decompressor::decompress(const std::string& inputBinPath, const std::string& outputTxtPath) {
-    std::ifstream binFile(inputBinPath, std::ios::binary);
-    if (!binFile.is_open()) {
-        std::cerr << "Lỗi: Không thể mở file nén " << inputBinPath << std::endl;
-        return false;
+    std::ifstream in(inputBinPath, std::ios::binary);
+    if (!in.is_open())
+        return fail("Khong mo duoc file nen");
+
+    std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)),
+                              std::istreambuf_iterator<char>());
+    in.close();
+
+    // 1. Magic + uniqueCount + originalLength
+    const size_t fixedHeader = 4 + 2 + 8;
+    if (data.size() < fixedHeader)
+        return fail("Header bi thieu du lieu");
+    if (data[0] != 'H' || data[1] != 'U' || data[2] != 'F' || data[3] != '1')
+        return fail("File khong dung dinh dang HUF1");
+
+    uint64_t uniqueCount = readLE(data, 4, 2);
+    uint64_t originalLength = readLE(data, 6, 8);
+    if (uniqueCount > 256)
+        return fail("uniqueCount vuot qua 256");
+
+    // 2. Bảng tần suất
+    const size_t tableBytes = static_cast<size_t>(uniqueCount) * 9;
+    if (data.size() < fixedHeader + tableBytes)
+        return fail("Bang tan suat bi thieu du lieu");
+
+    uint64_t freq[256] = {};
+    uint64_t sum = 0;
+    int prevSymbol = -1;
+    size_t pos = fixedHeader;
+    for (uint64_t i = 0; i < uniqueCount; i++) {
+        int symbol = data[pos];
+        uint64_t f = readLE(data, pos + 1, 8);
+        pos += 9;
+
+        if (symbol <= prevSymbol)
+            return fail("Bang tan suat khong sap xep tang dan hoac bi trung symbol");
+        if (f == 0)
+            return fail("Tan suat bang 0 trong bang tan suat");
+        if (f > originalLength - sum)
+            return fail("Tong tan suat khong khop originalLength");
+
+        sum += f;
+        freq[symbol] = f;
+        prevSymbol = symbol;
+    }
+    if (sum != originalLength)
+        return fail("Tong tan suat khac originalLength");
+
+    std::ofstream out(outputTxtPath, std::ios::binary);
+    if (!out.is_open())
+        return fail("Khong tao duoc file giai nen");
+
+    // 3. File rỗng
+    if (uniqueCount == 0) {
+        if (originalLength != 0)
+            return fail("uniqueCount = 0 nhung originalLength > 0");
+        out.close();
+        return !out.fail();
     }
 
-    // 1. Kiểm tra Magic Number "HF01"
-    char magic[4];
-    if (!binFile.read(magic, 4) || magic[0] != 'H' || magic[1] != 'F' || magic[2] != '0' || magic[3] != '1') {
-        std::cerr << "Lỗi: File không đúng định dạng nén HF01!" << std::endl;
-        return false;
-    }
-
-    // 2. Đọc Bảng Tần Số 256 phần tử
-    uint64_t freq[256];
-    for (int i = 0; i < 256; i++) {
-        if (!readUint64LE(binFile, freq[i])) {
-            std::cerr << "Lỗi: Header bị thiếu dữ liệu!" << std::endl;
-            return false;
-        }
-    }
-
-    // 3. Tái tạo cây Huffman
+    // 4. Dựng cây cùng quy tắc với người nén
     uint64_t totalSymbols = 0;
     auto root = buildHuffmanTree(freq, totalSymbols);
+    if (!root)
+        return fail("Khong dung duoc cay Huffman");
 
-    if (!root || totalSymbols == 0) {
-        // File rỗng
-        std::ofstream outFile(outputTxtPath, std::ios::binary);
-        return true;
-    }
+    // 5. Giải mã bit (MSB-first). Bit đệm ở cuối bị bỏ qua.
+    const size_t bitCount = (data.size() - pos) * 8;
+    size_t bitIndex = 0;
+    auto readBit = [&]() -> int {
+        if (bitIndex >= bitCount) return -1;
+        size_t byteIdx = pos + bitIndex / 8;
+        int shift = 7 - static_cast<int>(bitIndex % 8);
+        bitIndex++;
+        return (data[byteIdx] >> shift) & 1;
+    };
 
-    std::ofstream outFile(outputTxtPath, std::ios::binary);
-    if (!outFile.is_open()) {
-        std::cerr << "Lỗi: Không thể tạo file giải nén " << outputTxtPath << std::endl;
-        return false;
-    }
-
-    // 4. Giải nén luồng Bit bằng BitReader[cite: 4, 5]
-    binFile.close(); // Đóng file stream để BitReader mở lại từ đầu đường dẫn
-    BitReader reader(inputBinPath);
-
-    // Bỏ qua 4 bytes Magic + 256 * 8 bytes Frequency Table trong BitReader
-    for (size_t i = 0; i < 4 + 256 * 8; i++) {
-        for (int b = 0; b < 8; b++) {
-            reader.readBit();
+    for (uint64_t n = 0; n < originalLength; n++) {
+        if (root->isLeaf) {
+            // Chỉ có một symbol: mỗi symbol tốn đúng 1 bit (mã "0")
+            if (readBit() == -1)
+                return fail("Het du lieu bit truoc khi giai du");
+            out.put(static_cast<char>(root->symbol));
+            continue;
         }
-    }
 
-    auto current = root;
-    uint64_t decodedSymbols = 0;
-
-    while (decodedSymbols < totalSymbols) {
-        int bit = reader.readBit(); //[cite: 4, 5]
-        if (bit == -1) break;
-
-        current = (bit == 0) ? current->left : current->right;
-
-        if (current && current->isLeaf) {
-            outFile.put(static_cast<char>(current->symbol));
-            decodedSymbols++;
-            current = root; // Quay về gốc cho ký tự tiếp theo
+        auto node = root;
+        while (!node->isLeaf) {
+            int bit = readBit();
+            if (bit == -1)
+                return fail("Het du lieu bit truoc khi giai du");
+            node = (bit == 0) ? node->left : node->right;
         }
+        out.put(static_cast<char>(node->symbol));
     }
 
-    outFile.close();
-    return decodedSymbols == totalSymbols;
+    out.close();
+    return !out.fail();
 }
