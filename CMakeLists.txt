@@ -7,4 +7,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
 # Các file .cpp sẽ được thêm ở các ticket sau(DSA-2 đến DSA-5).
-add_executable(huffman src/main.cpp)
+add_executable(huffman
+    src/main.cpp
+    src/decompressor.cpp
+    src/huffmanTree.cpp
+    src/bitWriter.cpp
+    src/bitReader.cpp
+)

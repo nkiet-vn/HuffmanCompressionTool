@@ -42,7 +42,8 @@ static std::shared_ptr<HuffmanNode> buildHuffmanTree(const uint64_t freq[256], u
     // Trường hợp file chỉ có 1 loại ký tự duy nhất
     if (pq.size() == 1) {
         auto singleLeaf = pq.top();
-        auto root = std::make_shared<HuffmanNode>(singleLeaf->freq, singleLeaf, nullptr);
+        auto root = std::make_shared<HuffmanNode>(
+            singleLeaf->freq, singleLeaf->minSymbol, singleLeaf, nullptr);
         return root;
     }
 
@@ -50,7 +51,10 @@ static std::shared_ptr<HuffmanNode> buildHuffmanTree(const uint64_t freq[256], u
         auto left = pq.top(); pq.pop();
         auto right = pq.top(); pq.pop();
 
-        auto parent = std::make_shared<HuffmanNode>(left->freq + right->freq, left, right);
+        auto parent = std::make_shared<HuffmanNode>(
+            left->freq + right->freq,
+            (left->minSymbol < right->minSymbol) ? left->minSymbol : right->minSymbol,
+            left, right);
         pq.push(parent);
     }
 
