@@ -1,6 +1,7 @@
 #include "compressor.h"
 #include "bitWriter.h"
 #include "huffmanTree.h"
+#include "codec.h"
 #include <fstream>
 #include <iostream>
 
@@ -89,4 +90,20 @@ bool Compressor::compress(const std::string& inputPath, const std::string& outpu
 
     out.close();
     return !out.fail();
+}
+
+// API tương thích với nhánh DSA-4 (codec.h): bọc Compressor để trả về thông báo lỗi.
+bool compressFile(const std::string& inPath, const std::string& outPath, std::string& error) {
+    {
+        std::ifstream probe(inPath, std::ios::binary);
+        if (!probe.is_open()) {
+            error = "Khong mo duoc file nguon: " + inPath;
+            return false;
+        }
+    }
+    if (!Compressor::compress(inPath, outPath)) {
+        error = "Nen that bai: " + inPath;
+        return false;
+    }
+    return true;
 }

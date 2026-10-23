@@ -9,7 +9,6 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 add_library(huffman_core
     src/huffmanTree.cpp
     src/bitReader.cpp
-    src/bitWriter.cpp
     src/compressor.cpp
     src/decompressor.cpp
 )
@@ -30,3 +29,10 @@ add_test(NAME bitReader COMMAND test_bitReader)
 add_executable(test_roundtrip tests/test_roundtrip.cpp)
 target_link_libraries(test_roundtrip PRIVATE huffman_core)
 add_test(NAME roundtrip COMMAND test_roundtrip)
+
+add_executable(test_bit_writer tests/test_bit_writer.cpp)
+add_test(NAME bit_writer COMMAND test_bit_writer)
+
+add_executable(test_compress tests/test_compress.cpp)
+target_link_libraries(test_compress PRIVATE huffman_core)
+add_test(NAME compress COMMAND test_compress)
