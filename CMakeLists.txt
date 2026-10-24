@@ -8,3 +8,5 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 
 # Các file .cpp sẽ được thêm ở các ticket sau(DSA-2 đến DSA-5).
 add_executable(huffman src/main.cpp)
+    src/main.cpp
+    src/decompressor.cpp
