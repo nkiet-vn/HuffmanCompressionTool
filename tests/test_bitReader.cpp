@@ -2,7 +2,7 @@
 #include <fstream>
 #include <vector>
 #include <cassert>
-#include "../include/bitReader.h"
+#include "bitReader.h"
 
 // Tạo file nhị phân mẫu để giả lập kết quả do BitWriter ghi ra
 void createDummyFile(const std::string& filename) {

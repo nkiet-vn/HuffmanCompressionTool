@@ -1,168 +1,48 @@
 #include <iostream>
-#include <fstream>
 #include <string>
-#include <cstdint>
+#include "compressor.h"
+#include "decompressor.h"
+
 using namespace std;
 
-bool countFrequency(const string& fileName, uint64_t freq[256]) {
-    for (int i = 0; i < 256; i++) {
-        freq[i] = 0;
-    }
+int main(int argc, char* argv[]) {
+    // Dùng dòng lệnh: huffman -c <nguon> <dich.bin>  |  huffman -d <nen.bin> <dich>
+    if (argc >= 4) {
+        string mode = argv[1];
+        string inputPath = argv[2];
+        string outputPath = argv[3];
 
-    ifstream file(fileName, ios::binary);
-
-    if (!file.is_open()) {
-        cout << "Khong mo duoc file: " << fileName << endl;
-        return false;
-    }
-
-    char ch;
-
-    while (file.get(ch)) {
-        unsigned char byte = static_cast<unsigned char>(ch);
-        freq[byte]++;
-    }
-
-    if (file.bad()) {
-        cout << "Loi khi doc file!" << endl;
-        return false;
-    }
-
-    return true;
-}
-
-bool copyFile(const string& source, const string& destination) {
-    if (source == destination) {
-        cout << "File nguon va file dich khong duoc trung nhau!" << endl;
-        return false;
-    }
-
-    ifstream in(source, ios::binary);
-
-    if (!in.is_open()) {
-        cout << "Khong mo duoc file nguon!" << endl;
-        return false;
-    }
-
-    ofstream out(destination, ios::binary);
-
-    if (!out.is_open()) {
-        cout << "Khong tao duoc file dich!" << endl;
-        return false;
-    }
-
-    char buffer[65536];
-
-    while (true) {
-        in.read(buffer, sizeof(buffer));
-        streamsize bytesRead = in.gcount();
-
-        if (bytesRead > 0) {
-            out.write(buffer, bytesRead);
-
-            if (!out) {
-                cout << "Loi khi ghi file!" << endl;
-                return false;
+        if (mode == "-c") {
+            cout << "Dang nen: " << inputPath << " -> " << outputPath << endl;
+            if (Compressor().compress(inputPath, outputPath)) {
+                cout << "Nen thanh cong!\n";
+                return 0;
             }
+            cerr << "Nen that bai!\n";
+            return 1;
         }
-
-        if (in.eof()) {
-            break;
-        }
-
-        if (!in) {
-            cout << "Loi khi doc file!" << endl;
-            return false;
-        }
-    }
-
-    out.close();
-
-    if (out.fail()) {
-        cout << "Loi khi dong file dich!" << endl;
-        return false;
-    }
-
-    return true;
-}
-
-bool compareFiles(const string& file1, const string& file2) {
-    ifstream a(file1, ios::binary);
-    ifstream b(file2, ios::binary);
-
-    if (!a.is_open() || !b.is_open()) {
-        cout << "Khong mo duoc file de so sanh!" << endl;
-        return false;
-    }
-
-    char bufferA[65536];
-    char bufferB[65536];
-
-    while (true) {
-        a.read(bufferA, sizeof(bufferA));
-        streamsize sizeA = a.gcount();
-
-        b.read(bufferB, sizeof(bufferB));
-        streamsize sizeB = b.gcount();
-
-        if (a.bad() || b.bad()) {
-            cout << "Loi khi doc file de so sanh!" << endl;
-            return false;
-        }
-
-        if (sizeA != sizeB) {
-            return false;
-        }
-
-        for (streamsize i = 0; i < sizeA; i++) {
-            if (bufferA[i] != bufferB[i]) {
-                return false;
+        if (mode == "-d") {
+            cout << "Dang giai nen: " << inputPath << " -> " << outputPath << endl;
+            if (Decompressor().decompress(inputPath, outputPath)) {
+                cout << "Giai nen thanh cong!\n";
+                return 0;
             }
-        }
-
-        if (a.eof() && b.eof()) {
-            return true;
+            cerr << "Giai nen that bai!\n";
+            return 1;
         }
     }
-}
 
-int main() {
-    string inputFile;
-    string outputFile;
-
+    // Chế độ tương tác
+    string inputFile, outputFile;
     cout << "Nhap ten file nguon: ";
     getline(cin, inputFile);
-
-    cout << "Nhap ten file sao chep: ";
+    cout << "Nhap ten file .bin dau ra: ";
     getline(cin, outputFile);
 
-    uint64_t freq[256];
-
-    if (!countFrequency(inputFile, freq)) {
+    if (!Compressor().compress(inputFile, outputFile)) {
+        cout << "Tao file .bin that bai!\n";
         return 1;
     }
-
-    cout << "\nBang tan suat byte:\n";
-
-    for (int i = 0; i < 256; i++) {
-        if (freq[i] > 0) {
-            cout << "Byte " << i << ": " << freq[i] << endl;
-        }
-    }
-
-    if (!copyFile(inputFile, outputFile)) {
-        cout << "Sao chep file that bai!" << endl;
-        return 1;
-    }
-
-    cout << "\nSao chep file thanh cong!" << endl;
-
-    if (compareFiles(inputFile, outputFile)) {
-        cout << "Kiem tra: Hai file giong nhau." << endl;
-    } else {
-        cout << "Kiem tra: Hai file khong giong nhau hoac co loi." << endl;
-        return 1;
-    }
-
+    cout << "Nen thanh cong!\n";
     return 0;
 }

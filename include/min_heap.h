@@ -8,25 +8,25 @@
 
 #include "huffman_node.h"
 
-// MinHeap các HuffmanNode* theo tần suất (freq nhỏ nhất ở đỉnh).
+// MinHeap các MinHeapNode* theo tần suất (freq nhỏ nhất ở đỉnh).
 class MinHeap {
 public:
-    void push(HuffmanNode* node) {                 // O(log n)
+    void push(MinHeapNode* node) {                 // O(log n)
         if (node == nullptr) throw std::invalid_argument("MinHeap::push: node is null");
         data_.push_back(node);
         siftUp(data_.size() - 1);
     }
 
-    HuffmanNode* pop() {                           // O(log n)
+    MinHeapNode* pop() {                           // O(log n)
         if (empty()) throw std::out_of_range("MinHeap::pop: heap is empty");
-        HuffmanNode* minNode = data_.front();
+        MinHeapNode* minNode = data_.front();
         data_.front() = data_.back();
         data_.pop_back();
         if (!data_.empty()) siftDown(0);
         return minNode;
     }
 
-    HuffmanNode* top() const {                     // O(1)
+    MinHeapNode* top() const {                     // O(1)
         if (empty()) throw std::out_of_range("MinHeap::top: heap is empty");
         return data_.front();
     }
@@ -35,7 +35,7 @@ public:
     bool empty() const { return data_.empty(); }
 
 private:
-    std::vector<HuffmanNode*> data_;
+    std::vector<MinHeapNode*> data_;
 
     static std::size_t parent(std::size_t i) { return (i - 1) / 2; }
 
