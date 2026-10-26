@@ -57,3 +57,9 @@ add_test(NAME testT10 COMMAND testT10)
 add_executable(verify_samples tests/verify_samples.cpp)
 target_link_libraries(verify_samples PRIVATE huffman_core t10Core)
 add_test(NAME verify_samples COMMAND verify_samples)
+    
+add_executable(huffman src/main.cpp)
+enable_testing()
+add_executable(testHuffmanCore tests/test_huffmanCore.cpp src/huffmanTree.cpp)
+add_test(NAME huffmanCore COMMAND testHuffmanCore)
+ 
