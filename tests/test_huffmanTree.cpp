@@ -1,3 +1,4 @@
+#undef NDEBUG
 #include "huffmanTree.h"
 #include <cassert>
 #include <cstdint>

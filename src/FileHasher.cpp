@@ -4,7 +4,7 @@
 #include <fstream>
 #include <vector>
 
-#include "Sha256.h"
+#include "sha256.h"
 
 std::optional<std::string> computeFileSha256(const std::string& filePath) {
     std::ifstream input(filePath, std::ios::binary);

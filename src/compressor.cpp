@@ -1,9 +1,9 @@
 #include "compressor.h"
 #include "bitWriter.h"
 #include "huffmanTree.h"
-#include "codec.h"
 #include <fstream>
 #include <iostream>
+#include <filesystem>
 
 namespace {
 
@@ -17,7 +17,12 @@ void writeLE(std::ostream& out, uint64_t value, int bytes) {
 } // namespace
 
 bool Compressor::compress(const std::string& inputPath, const std::string& outputBinPath) {
-    if (inputPath == outputBinPath) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    // Kiểm tra trùng file bằng filesystem::equivalent
+    if (fs::exists(inputPath, ec) && fs::exists(outputBinPath, ec) && 
+        fs::equivalent(inputPath, outputBinPath, ec)) {
         std::cerr << "Loi: file nguon va file dich khong duoc trung nhau!\n";
         return false;
     }
@@ -47,10 +52,11 @@ bool Compressor::compress(const std::string& inputPath, const std::string& outpu
     for (int s = 0; s < 256; s++)
         if (freq[s] > 0) uniqueCount++;
 
-    // Ghi header
-    std::ofstream out(outputBinPath, std::ios::binary);
+    // Ghi ra file tạm để tránh ghi đè file gốc
+    std::string tempPath = outputBinPath + ".tmp";
+    std::ofstream out(tempPath, std::ios::binary);
     if (!out.is_open()) {
-        std::cerr << "Loi: Khong tao duoc file " << outputBinPath << "\n";
+        std::cerr << "Loi: Khong tao duoc file " << tempPath << "\n";
         return false;
     }
 
@@ -64,46 +70,44 @@ bool Compressor::compress(const std::string& inputPath, const std::string& outpu
     }
 
     // File rỗng: không có dữ liệu bit
-    if (originalLength == 0) {
-        out.close();
-        return !out.fail();
-    }
+    if (originalLength != 0) {
+        // Lượt 2: mã hóa bit
+        uint64_t totalSymbols = 0;
+        auto root = buildHuffmanTree(freq, totalSymbols);
+        HuffmanCodeTable codeTable;
+        buildCodeTable(root, codeTable);
 
-    // Lượt 2: mã hóa bit
-    uint64_t totalSymbols = 0;
-    auto root = buildHuffmanTree(freq, totalSymbols);
-    HuffmanCodeTable codeTable;
-    buildCodeTable(root, codeTable);
-
-    in.clear();
-    in.seekg(0, std::ios::beg);
-    BitWriter writer(out);
-    while (in.read(buffer, sizeof(buffer)) || in.gcount() > 0) {
-        std::streamsize n = in.gcount();
-        for (std::streamsize i = 0; i < n; i++) {
-            const std::string& code = codeTable[static_cast<unsigned char>(buffer[i])];
-            for (char c : code)
-                writer.writeBit(c == '1' ? 1 : 0);
+        in.clear();
+        in.seekg(0, std::ios::beg);
+        BitWriter writer(out);
+        while (in.read(buffer, sizeof(buffer)) || in.gcount() > 0) {
+            std::streamsize n = in.gcount();
+            for (std::streamsize i = 0; i < n; i++) {
+                const std::string& code = codeTable[static_cast<unsigned char>(buffer[i])];
+                for (char c : code)
+                    writer.writeBit(c == '1' ? 1 : 0);
+            }
         }
+        writer.flush();
     }
-    writer.flush();
 
     out.close();
-    return !out.fail();
-}
-
-// API tương thích với nhánh DSA-4 (codec.h): bọc Compressor để trả về thông báo lỗi.
-bool compressFile(const std::string& inPath, const std::string& outPath, std::string& error) {
-    {
-        std::ifstream probe(inPath, std::ios::binary);
-        if (!probe.is_open()) {
-            error = "Khong mo duoc file nguon: " + inPath;
-            return false;
-        }
-    }
-    if (!Compressor().compress(inPath, outPath)) {
-        error = "Nen that bai: " + inPath;
+    in.close();
+    
+    if (out.fail()) {
+        fs::remove(tempPath, ec);
         return false;
     }
+    
+    // Đổi tên file tạm thành file đích
+    fs::remove(outputBinPath, ec);
+    fs::rename(tempPath, outputBinPath, ec);
+    if (ec) {
+        std::cerr << "Loi: Khong doi ten duoc file tam: " << ec.message() << "\n";
+        return false;
+    }
+    
     return true;
 }
+
+

@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include "huffman_node.h"
+#include "huffmanNode.h"
 
 // MinHeap các MinHeapNode* theo tần suất (freq nhỏ nhất ở đỉnh).
 class MinHeap {
@@ -39,10 +39,20 @@ private:
 
     static std::size_t parent(std::size_t i) { return (i - 1) / 2; }
 
+    static bool less(const MinHeapNode* a, const MinHeapNode* b) {
+        if (a->freq != b->freq) return a->freq < b->freq;
+        return a->minSymbol < b->minSymbol;
+    }
+
     void siftUp(std::size_t i) {
-        while (i > 0 && data_[i]->freq < data_[parent(i)]->freq) {
-            std::swap(data_[i], data_[parent(i)]);
-            i = parent(i);
+        while (i > 0) {
+            std::size_t p = parent(i);
+            if (less(data_[i], data_[p])) {
+                std::swap(data_[i], data_[p]);
+                i = p;
+            } else {
+                break;
+            }
         }
     }
 
@@ -50,8 +60,8 @@ private:
         const std::size_t n = data_.size();
         while (true) {
             std::size_t smallest = i, l = 2 * i + 1, r = 2 * i + 2;
-            if (l < n && data_[l]->freq < data_[smallest]->freq) smallest = l;
-            if (r < n && data_[r]->freq < data_[smallest]->freq) smallest = r;
+            if (l < n && less(data_[l], data_[smallest])) smallest = l;
+            if (r < n && less(data_[r], data_[smallest])) smallest = r;
             if (smallest == i) break;
             std::swap(data_[i], data_[smallest]);
             i = smallest;

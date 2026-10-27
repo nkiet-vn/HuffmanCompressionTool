@@ -3,4 +3,31 @@ out/
 .vscode/
 *.exe
 
+# File nén và file sinh ra khi chạy thử
 *.bin
+*.tmp
+*.bitdata
+ket_qua_nen.md
+verify_tmp/
+
+# File rác do test sinh ra khi chạy ở thư mục gốc
+aab.txt
+aab.bin
+sample.txt
+sample.bin
+empty.txt
+empty.bin
+one.txt
+one.bin
+test_temp.bin
+rt_*.tmp
+rt_*.bin
+bai*.bin
+*.out
+menu_*.txt
+menu_*.bin
+mi.txt
+menu_in.txt
+
+# Log rỗng / file tạm của log
+logs/*.log

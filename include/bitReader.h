@@ -16,6 +16,8 @@ private:
 
 public:
     explicit BitReader(const std::string& filename);
+    // Đọc bắt đầu từ offset byte (bỏ qua phần header).
+    BitReader(const std::string& filename, std::streamoff startOffset);
     ~BitReader();
 
     BitReader(const BitReader&) = delete;

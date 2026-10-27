@@ -1,5 +1,5 @@
 #undef NDEBUG
-#include "codec.h"
+#include "compressor.h"
 #include <cassert>
 #include <fstream>
 #include <iostream>
@@ -20,8 +20,7 @@ static std::vector<unsigned char> readFile(const std::string& path) {
 // Khop tung byte voi vi du "aab" trong docs/fileFormat.md
 void test_aab_matches_spec() {
     writeFile("aab.txt", "aab");
-    std::string err;
-    assert(compressFile("aab.txt", "aab.bin", err));
+    assert(Compressor().compress("aab.txt", "aab.bin"));
     std::vector<unsigned char> expected = {
         0x48, 0x55, 0x46, 0x31,
         0x02, 0x00,
@@ -37,8 +36,7 @@ void test_smaller_than_original() {
     std::string text;
     for (int i = 0; i < 500; ++i) text += "the quick brown fox jumps over the lazy dog. ";
     writeFile("sample.txt", text);
-    std::string err;
-    assert(compressFile("sample.txt", "sample.bin", err));
+    assert(Compressor().compress("sample.txt", "sample.bin"));
     std::vector<unsigned char> bin = readFile("sample.bin");
     assert(bin.size() < text.size());
     std::cout << "original=" << text.size() << " compressed=" << bin.size() << "\n";
@@ -46,23 +44,19 @@ void test_smaller_than_original() {
 
 void test_empty_file() {
     writeFile("empty.txt", "");
-    std::string err;
-    assert(compressFile("empty.txt", "empty.bin", err));
+    assert(Compressor().compress("empty.txt", "empty.bin"));
     assert(readFile("empty.bin").size() == 14);  // chi co header
 }
 
 void test_single_symbol() {
     writeFile("one.txt", std::string(1000, 'a'));
-    std::string err;
-    assert(compressFile("one.txt", "one.bin", err));
+    assert(Compressor().compress("one.txt", "one.bin"));
     // header 14 + 9 = 23 byte, 1000 bit = 125 byte
     assert(readFile("one.bin").size() == 23 + 125);
 }
 
 void test_missing_input() {
-    std::string err;
-    assert(!compressFile("khong_ton_tai.txt", "x.bin", err));
-    assert(!err.empty());
+    assert(!Compressor().compress("khong_ton_tai.txt", "x.bin"));
 }
 
 int main() {

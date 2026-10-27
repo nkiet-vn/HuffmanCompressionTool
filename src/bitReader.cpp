@@ -7,6 +7,19 @@ BitReader::BitReader(const std::string& filename) : buffer(0), bitIndex(-1) {
     }
 }
 
+BitReader::BitReader(const std::string& filename, std::streamoff startOffset)
+    : buffer(0), bitIndex(-1) {
+    file.open(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Lỗi BitReader: Không thể mở file " + filename);
+    }
+    file.seekg(startOffset, std::ios::beg);
+    if (!file) {
+        throw std::runtime_error("Lỗi BitReader: Không thể di chuyển tới offset " +
+                                 std::to_string(startOffset) + " trong file " + filename);
+    }
+}
+
 BitReader::~BitReader() {
     if (file.is_open()) {
         file.close();

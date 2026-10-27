@@ -74,17 +74,32 @@ Khi đọc file, bộ giải nén phải từ chối (báo lỗi) nếu gặp m�
 - `uniqueCount > 256`.
 - Có symbol trùng lặp, không sắp xếp tăng dần, hoặc có `freq = 0` trong bảng.
 - Tổng các `freq` khác `originalLength`.
-- `uniqueCount = 0` nhưng `originalLength > 0`.
 - Hết dữ liệu bit trước khi giải đủ `originalLength` symbol.
+- Dữ liệu bit bị thiếu: số bit cần thiết lớn hơn số bit có trong file.
+- Dữ liệu thừa ở cuối file: số bit có nhiều hơn số bit cần thiết từ 8 trở lên.
 
-Bit đệm ở cuối bị bỏ qua. Bộ giải nén dừng khi đã giải đủ `originalLength` symbol, không dựa vào số bit còn lại.
+**Kiểm tra kích thước phần dữ liệu bit ngay từ đầu:** sau khi dựng cây, bộ giải nén tính
+`số bit cần thiết = Σ (độ dài mã của symbol × freq của symbol)` (với cây 1 ký tự: `originalLength` bit)
+và so sánh với `8 × (kích thước file − kích thước header − kích thước bảng tần suất)`.
+Chênh lệch hợp lệ chỉ được nằm trong khoảng `[0, 7]` (bit đệm ở byte cuối).
+Nhờ vậy, tình huống `uniqueCount = 0` nhưng `originalLength > 0` đã bị chặn từ bước kiểm tra
+tổng tần suất (`sum != originalLength`) nên nhánh kiểm tra riêng cho trường hợp này là dư thừa
+và đã được bỏ khỏi mã nguồn.
 
-## 6. Ngoài phạm vi hiện tại
+## 6. Kiểm tra toàn vẹn (ngoài định dạng file)
 
-- Không có checksum. Nếu cần kiểm tra toàn vẹn, sẽ tăng phiên bản thành `HUF2` và thêm trường CRC32. Mọi thay đổi định dạng phải cập nhật tài liệu này.
+Định dạng `HUF1` **không** nhúng checksum vào file. Việc xác minh khôi phục 100% được thực hiện ở tầng
+công cụ: chế độ `huffman -v <nguồn> <nén.bin>` nén file, giải nén ra file tạm, rồi so sánh SHA-256
+của file gốc và file phục hồi. Nếu cần nhúng checksum trực tiếp vào định dạng, sẽ tăng phiên bản
+thành `HUF2` và thêm trường CRC32; mọi thay đổi định dạng phải cập nhật tài liệu này.
+
+## 7. Ngoài phạm vi hiện tại
+
 - Không xử lý theo khối. Toàn bộ file được xử lý một lần.
+- Header ghi đầy đủ tần suất 9 byte mỗi ký tự; file rất ngắn có thể nén ra lớn hơn gốc.
+  Hướng cải tiến tương lai: Canonical Huffman (chỉ lưu độ dài mã) hoặc chế độ "lưu nguyên".
 
-## 7. Thay đổi so với bản nháp trước
+## 8. Thay đổi so với bản nháp trước
 
 - Thêm quy tắc chọn bit 0/1 và quy tắc hòa tần suất dựa trên `minSymbol`.
 - Thêm quy định MSB-first và bit đệm.

@@ -1,27 +1,33 @@
 #include "decompressor.h"
 #include "huffmanTree.h"
+#include "bitReader.h"
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <vector>
+#include <filesystem>
 
-namespace {
+namespace
+{
 
-bool fail(const char* msg) {
-    std::cerr << "Loi: " << msg << "\n";
-    return false;
-}
+    bool fail(const char *msg)
+    {
+        std::cerr << "Loi: " << msg << "\n";
+        return false;
+    }
 
-uint64_t readLE(const std::vector<uint8_t>& data, size_t pos, int bytes) {
-    uint64_t value = 0;
-    for (int i = 0; i < bytes; i++)
-        value |= static_cast<uint64_t>(data[pos + i]) << (8 * i);
-    return value;
-}
+    uint64_t readLE(const std::vector<uint8_t> &data, size_t pos, int bytes)
+    {
+        uint64_t value = 0;
+        for (int i = 0; i < bytes; i++)
+            value |= static_cast<uint64_t>(data[pos + i]) << (8 * i);
+        return value;
+    }
 
 } // namespace
 
-bool Decompressor::decompress(const std::string& inputBinPath, const std::string& outputTxtPath) {
+bool Decompressor::decompress(const std::string &inputBinPath, const std::string &outputTxtPath)
+{
     std::ifstream in(inputBinPath, std::ios::binary);
     if (!in.is_open())
         return fail("Khong mo duoc file nen");
@@ -51,7 +57,8 @@ bool Decompressor::decompress(const std::string& inputBinPath, const std::string
     uint64_t sum = 0;
     int prevSymbol = -1;
     size_t pos = fixedHeader;
-    for (uint64_t i = 0; i < uniqueCount; i++) {
+    for (uint64_t i = 0; i < uniqueCount; i++)
+    {
         int symbol = data[pos];
         uint64_t f = readLE(data, pos + 1, 8);
         pos += 9;
@@ -70,54 +77,132 @@ bool Decompressor::decompress(const std::string& inputBinPath, const std::string
     if (sum != originalLength)
         return fail("Tong tan suat khac originalLength");
 
-    std::ofstream out(outputTxtPath, std::ios::binary);
-    if (!out.is_open())
-        return fail("Khong tao duoc file giai nen");
-
-    // 3. File rỗng
-    if (uniqueCount == 0) {
-        if (originalLength != 0)
-            return fail("uniqueCount = 0 nhung originalLength > 0");
-        out.close();
-        return !out.fail();
+    // File rỗng: chỉ có header, không có dữ liệu bit
+    if (uniqueCount == 0)
+    {
+        std::ofstream emptyOut(outputTxtPath, std::ios::binary);
+        if (!emptyOut.is_open())
+            return fail("Khong tao duoc file giai nen");
+        emptyOut.close();
+        return !emptyOut.fail();
     }
 
-    // 4. Dựng cây cùng quy tắc với người nén
+    // 3. Dựng cây cùng quy tắc với người nén
     uint64_t totalSymbols = 0;
     auto root = buildHuffmanTree(freq, totalSymbols);
     if (!root)
         return fail("Khong dung duoc cay Huffman");
 
-    // 5. Giải mã bit (MSB-first). Bit đệm ở cuối bị bỏ qua.
-    const size_t bitCount = (data.size() - pos) * 8;
-    size_t bitIndex = 0;
-    auto readBit = [&]() -> int {
-        if (bitIndex >= bitCount) return -1;
-        size_t byteIdx = pos + bitIndex / 8;
-        int shift = 7 - static_cast<int>(bitIndex % 8);
-        bitIndex++;
-        return (data[byteIdx] >> shift) & 1;
+    // 4. Kiểm tra kích thước phần dữ liệu bit ngay từ đầu.
+    //    Số bit tối thiểu cần để mã hóa originalLength ký tự phải khớp với số byte còn lại
+    //    (chỉ cho phép tối đa 7 bit đệm ở byte cuối).
+    const size_t remainingBytes = data.size() - pos;
+    const uint64_t availableBits = static_cast<uint64_t>(remainingBytes) * 8;
+    {
+        // Độ dài mã của từng symbol; cây 1 ký tự dùng đúng 1 bit/ký tự.
+        uint64_t requiredBits = 0;
+        if (root->isLeaf)
+        {
+            requiredBits = originalLength;
+        }
+        else
+        {
+            // Tính tổng số bit cần thiết dựa trên cây (duyệt lặp để tránh đệ quy sâu).
+            std::vector<std::pair<const HuffmanNode *, int>> stack;
+            stack.push_back({root.get(), 0});
+            while (!stack.empty())
+            {
+                auto [node, depth] = stack.back();
+                stack.pop_back();
+                if (node->isLeaf)
+                {
+                    requiredBits += static_cast<uint64_t>(depth) * freq[node->symbol];
+                }
+                else
+                {
+                    if (node->left)
+                        stack.push_back({node->left.get(), depth + 1});
+                    if (node->right)
+                        stack.push_back({node->right.get(), depth + 1});
+                }
+            }
+        }
+        if (requiredBits > availableBits)
+            return fail("Du lieu bit bi thieu");
+        if (availableBits - requiredBits >= 8)
+            return fail("File nen co du lieu thua o cuoi");
+    }
+
+    // 5. Giải mã bit (MSB-first) dùng BitReader, bỏ qua phần header
+    std::ofstream out(outputTxtPath, std::ios::binary);
+    if (!out.is_open())
+        return fail("Khong tao duoc file giai nen");
+
+    auto cleanupOnError = [&]()
+    {
+        out.close();
+        std::error_code ec;
+        std::filesystem::remove(outputTxtPath, ec);
     };
 
-    for (uint64_t n = 0; n < originalLength; n++) {
-        if (root->isLeaf) {
-            // Chỉ có một symbol: mỗi symbol tốn đúng 1 bit (mã "0")
-            if (readBit() == -1)
-                return fail("Het du lieu bit truoc khi giai du");
-            out.put(static_cast<char>(root->symbol));
-            continue;
-        }
+    bool decodeOk = true;
+    try
+    {
+        BitReader bitReader(inputBinPath, static_cast<std::streamoff>(pos));
 
-        auto node = root;
-        while (!node->isLeaf) {
-            int bit = readBit();
-            if (bit == -1)
-                return fail("Het du lieu bit truoc khi giai du");
-            node = (bit == 0) ? node->left : node->right;
+        for (uint64_t n = 0; n < originalLength && decodeOk; n++)
+        {
+            if (root->isLeaf)
+            {
+                // Chỉ có một symbol: mỗi symbol tốn đúng 1 bit (mã "0")
+                if (bitReader.readBit() == -1)
+                {
+                    decodeOk = false;
+                    break;
+                }
+                out.put(static_cast<char>(root->symbol));
+                continue;
+            }
+
+            auto node = root;
+            while (!node->isLeaf)
+            {
+                int bit = bitReader.readBit();
+                if (bit == -1)
+                {
+                    decodeOk = false;
+                    break;
+                }
+                node = (bit == 0) ? node->left : node->right;
+                if (!node)
+                {
+                    decodeOk = false;
+                    break;
+                }
+            }
+            if (decodeOk)
+                out.put(static_cast<char>(node->symbol));
         }
-        out.put(static_cast<char>(node->symbol));
+    } // BitReader đóng file ở đây
+    catch (const std::exception& ex)
+    {
+        cleanupOnError();
+        std::cerr << "Loi: " << ex.what() << "\n";
+        return false;
+    }
+
+    if (!decodeOk)
+    {
+        cleanupOnError();
+        return fail("Du lieu bit khong hop le hoac bi thieu");
     }
 
     out.close();
-    return !out.fail();
+    if (out.fail())
+    {
+        std::error_code ec;
+        std::filesystem::remove(outputTxtPath, ec);
+        return false;
+    }
+    return true;
 }

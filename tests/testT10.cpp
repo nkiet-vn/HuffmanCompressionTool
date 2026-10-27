@@ -9,7 +9,7 @@
 #include "CompressionVerifier.h"
 #include "FileHasher.h"
 #include "ICodec.h"
-#include "Sha256.h"
+#include "sha256.h"
 
 namespace fs = std::filesystem;
 
