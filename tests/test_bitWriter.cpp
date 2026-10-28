@@ -1,4 +1,4 @@
-#undef NDEBUG
+﻿#undef NDEBUG
 #include "../include/bitWriter.h"
 #include <cassert>
 #include <iostream>

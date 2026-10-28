@@ -1,4 +1,5 @@
-#include "menuController.h"
+﻿#include "menuController.h"
+#include "pathUtil.h"
 
 #include <filesystem>
 #include <fstream>
@@ -20,7 +21,7 @@ namespace
     bool isRegularFile(const std::string &path)
     {
         std::error_code ec;
-        return fs::is_regular_file(path, ec) && !ec;
+        return fs::is_regular_file(toPath(path), ec) && !ec;
     }
 
 } // namespace
@@ -171,13 +172,13 @@ bool MenuController::compressAndVerify(const std::string &inputPath,
     {
         ui_.showError("Giai nen xac minh that bai.");
         std::error_code ec;
-        fs::remove(tempPath, ec);
+        fs::remove(toPath(tempPath), ec);
         return false;
     }
 
     const std::optional<std::string> restoredHash = computeFileSha256(tempPath);
     std::error_code ec;
-    fs::remove(tempPath, ec);
+    fs::remove(toPath(tempPath), ec);
 
     if (!restoredHash)
     {
@@ -200,7 +201,7 @@ bool MenuController::compressAndVerify(const std::string &inputPath,
 void MenuController::showFileInfo(const std::string &path) const
 {
     std::error_code ec;
-    const std::uintmax_t size = fs::file_size(path, ec);
+    const std::uintmax_t size = fs::file_size(toPath(path), ec);
     if (ec)
     {
         ui_.showError("Khong doc duoc file: " + path);
@@ -211,7 +212,7 @@ void MenuController::showFileInfo(const std::string &path) const
     ui_.showKeyValue("Duong dan", path);
     ui_.showKeyValue("Kich thuoc", ConsoleUI::formatBytes(size) + " (" + std::to_string(size) + " byte)");
 
-    std::ifstream probe(path, std::ios::binary);
+    std::ifstream probe(toPath(path), std::ios::binary);
     char magic[4] = {};
     const bool hasMagic = static_cast<bool>(probe.read(magic, 4));
     probe.close();

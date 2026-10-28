@@ -1,4 +1,4 @@
-// Test cho lõi Huffman: thứ tự pop của MinHeap, cây 1 ký tự, bảng mã không có tiền tố trùng.
+﻿// Test cho lõi Huffman: thứ tự pop của MinHeap, cây 1 ký tự, bảng mã không có tiền tố trùng.
 // Mỗi test in một dòng [PASS]/[FAIL]; chương trình trả về 0 khi tất cả pass.
 #include "huffmanTree.h"
 
@@ -264,6 +264,27 @@ struct TestCase {
 
 }  // namespace
 
+// ---------- Test: tần suất lớn hơn 2^31 không bị tràn số ----------
+
+void testHugeFrequenciesNoOverflow() {
+    uint64_t freq[256] = {};
+    freq[0] = 3000000000ULL;   // > INT_MAX
+    freq[1] = 3000000000ULL;
+    freq[2] = 1;
+    uint64_t total = 0;
+    NodePtr root = buildHuffmanTree(freq, total);
+    CHECK(total == 6000000001ULL);
+    CHECK(root != nullptr);
+    CHECK(root->freq == 6000000001ULL);
+    HuffmanCodeTable table;
+    buildCodeTable(root, table);
+    // Hai nút nhỏ nhất là symbol 2 (tần suất 1) và symbol 0 (hòa với symbol 1, minSymbol nhỏ hơn),
+    // nên symbol 1 là lá nông nhất (mã 1 bit), hai symbol còn lại có mã 2 bit.
+    CHECK(table[1].size() == 1);
+    CHECK(table[0].size() == 2);
+    CHECK(table[2].size() == 2);
+}
+
 int main() {
     const std::vector<TestCase> tests = {
         {"MinHeap pop: freq tang dan, hoa thi minSymbol nho truoc", testHeapPopOrderByFreqThenMinSymbol},
@@ -280,6 +301,7 @@ int main() {
         {"Prefix-free: 256 symbol deu nhau (moi ma 8 bit)", testPrefixFreeAll256Uniform},
         {"Prefix-free: cay lech kieu Fibonacci", testPrefixFreeFibonacciSkewed},
         {"Prefix-free: 200 bang tan suat ngau nhien (seed co dinh)", testPrefixFreeRandomTables},
+        {"Tan suat > 2^31 khong bi tran so", testHugeFrequenciesNoOverflow},
     };
 
     int passed = 0;

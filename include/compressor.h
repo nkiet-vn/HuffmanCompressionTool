@@ -1,4 +1,4 @@
-#ifndef COMPRESSOR_H
+﻿#ifndef COMPRESSOR_H
 #define COMPRESSOR_H
 
 #include <string>

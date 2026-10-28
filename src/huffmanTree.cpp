@@ -1,26 +1,7 @@
-#include "huffmanTree.h"
+﻿#include "huffmanTree.h"
 #include "minHeap.h"
 #include <utility>
 #include <memory>
-
-// Chuyển đổi giữa MinHeapNode (raw pointer) và HuffmanNode (shared_ptr)
-static std::shared_ptr<HuffmanNode> convertToHuffmanNode(MinHeapNode* node) {
-    if (!node) return nullptr;
-    if (node->isLeaf()) {
-        return std::make_shared<HuffmanNode>(static_cast<uint8_t>(node->ch), static_cast<uint64_t>(node->freq));
-    }
-    auto left = convertToHuffmanNode(node->left);
-    auto right = convertToHuffmanNode(node->right);
-    uint8_t minSym = node->minSymbol;
-    return std::make_shared<HuffmanNode>(static_cast<uint64_t>(node->freq), minSym, left, right);
-}
-
-static void deleteMinHeapTree(MinHeapNode* node) {
-    if (!node) return;
-    deleteMinHeapTree(node->left);
-    deleteMinHeapTree(node->right);
-    delete node;
-}
 
 HuffmanNode::HuffmanNode(uint8_t symbolValue, uint64_t frequency)
     : symbol(symbolValue), freq(frequency), minSymbol(symbolValue), isLeaf(true),
@@ -48,23 +29,19 @@ std::shared_ptr<HuffmanNode> buildHuffmanTree(const uint64_t freqTable[256], uin
     totalSymbols = 0;
     for (int symbol = 0; symbol < 256; ++symbol) {
         if (freqTable[symbol] == 0) continue;
-        minHeap.push(new MinHeapNode(static_cast<char>(symbol), static_cast<int>(freqTable[symbol])));
+        minHeap.push(std::make_shared<HuffmanNode>(static_cast<uint8_t>(symbol), freqTable[symbol]));
         totalSymbols += freqTable[symbol];
     }
     if (minHeap.empty()) return nullptr;
 
+    // Lấy hai nút nhỏ nhất, gộp thành nút cha, đẩy lại vào heap cho đến khi còn một nút (gốc).
     while (minHeap.size() > 1) {
-        MinHeapNode* left = minHeap.pop();
-        MinHeapNode* right = minHeap.pop();
-        int combinedFreq = left->freq + right->freq;
-        MinHeapNode* parent = new MinHeapNode('\0', combinedFreq, left, right);
-        minHeap.push(parent);
+        auto left = minHeap.pop();
+        auto right = minHeap.pop();
+        const uint8_t minSym = left->minSymbol < right->minSymbol ? left->minSymbol : right->minSymbol;
+        minHeap.push(std::make_shared<HuffmanNode>(left->freq + right->freq, minSym, left, right));
     }
-    
-    MinHeapNode* root = minHeap.pop();
-    auto huffmanRoot = convertToHuffmanNode(root);
-    deleteMinHeapTree(root);
-    return huffmanRoot;
+    return minHeap.pop();
 }
 
 void buildCodeTable(const std::shared_ptr<HuffmanNode>& root, HuffmanCodeTable& codeTable) {

@@ -1,4 +1,5 @@
 #include "CompressionStats.h"
+#include "pathUtil.h"
 
 #include <filesystem>
 #include <iomanip>
@@ -7,10 +8,10 @@
 
 std::optional<std::uintmax_t> getFileSize(const std::string& filePath) {
     std::error_code errorCode;
-    if (!std::filesystem::is_regular_file(filePath, errorCode) || errorCode) {
+    if (!std::filesystem::is_regular_file(toPath(filePath), errorCode) || errorCode) {
         return std::nullopt;
     }
-    std::uintmax_t size = std::filesystem::file_size(filePath, errorCode);
+    std::uintmax_t size = std::filesystem::file_size(toPath(filePath), errorCode);
     if (errorCode) {
         return std::nullopt;
     }

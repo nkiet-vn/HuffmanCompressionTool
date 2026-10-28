@@ -1,4 +1,4 @@
-#include "consoleUI.h"
+﻿#include "consoleUI.h"
 
 #include <algorithm>
 #include <cctype>
@@ -20,6 +20,18 @@ namespace
             return "";
         const auto last = text.find_last_not_of(" \t\r\n");
         return text.substr(first, last - first + 1);
+    }
+
+    // "Copy as path" của Windows dán đường dẫn kèm dấu ngoặc kép: bỏ cặp ngoặc bao quanh.
+    std::string stripQuotes(const std::string &text)
+    {
+        if (text.size() >= 2)
+        {
+            const char first = text.front();
+            if ((first == '"' || first == '\'') && text.back() == first)
+                return trim(text.substr(1, text.size() - 2));
+        }
+        return text;
     }
 
     std::string toLower(std::string text)
@@ -126,7 +138,7 @@ std::string ConsoleUI::readNonEmptyLine(const std::string &prompt) const
 {
     for (;;)
     {
-        std::string value = readLine(prompt);
+        std::string value = stripQuotes(readLine(prompt));
         if (!value.empty())
             return value;
         showWarning("Gia tri khong duoc de trong. Vui long nhap lai.");
