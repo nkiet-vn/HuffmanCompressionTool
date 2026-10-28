@@ -17,9 +17,8 @@ HuffmanCompressionTool/
 ├── include/
 │   ├── bitWriter.h             # Ghi bit ra stream
 │   ├── bitReader.h             # Đọc bit từ stream (có hỗ trợ offset)
-│   ├── huffmanTree.h           # Cây Huffman và bảng mã
-│   ├── huffmanNode.h           # Node dùng cho Min-Heap
-│   ├── minHeap.h               # Min-Heap tự viết (khóa: freq, minSymbol)
+│   ├── huffmanTree.h           # Cây Huffman, HuffmanNode (kiểu nút duy nhất) và bảng mã
+│   ├── minHeap.h               # Min-Heap tự viết, chứa HuffmanNode (khóa: freq, minSymbol)
 │   ├── compressor.h            # Class nén
 │   ├── decompressor.h          # Class giải nén
 │   ├── CompressionStats.h      # Thống kê tỷ lệ nén

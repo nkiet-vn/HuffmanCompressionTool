@@ -1,4 +1,4 @@
-#ifndef DECOMPRESSOR_H
+﻿#ifndef DECOMPRESSOR_H
 #define DECOMPRESSOR_H
 
 #include <string>

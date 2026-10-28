@@ -1,5 +1,14 @@
-#include <iostream>
+﻿#include <iostream>
 #include <string>
+#include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#ifdef _MSC_VER
+#pragma comment(lib, "shell32.lib")
+#endif
+#endif
 
 #include "compressor.h"
 #include "consoleUI.h"
@@ -23,6 +32,33 @@ void printHelp() {
     std::cout << "  huffman -v input.txt output.bin\n";
 }
 
+// Trả về tham số dòng lệnh dạng UTF-8.
+// Windows: đặt console sang UTF-8 (nhập/xuất chữ có dấu) và lấy tham số từ GetCommandLineW,
+// vì argv của Windows đi qua bảng mã ANSI nên chữ có dấu (vd "mẫu.txt") bị biến thành '?'.
+std::vector<std::string> utf8Arguments(int argc, char* argv[]) {
+    std::vector<std::string> args(argv, argv + argc);
+#ifdef _WIN32
+    SetConsoleCP(CP_UTF8);
+    SetConsoleOutputCP(CP_UTF8);
+    int wideCount = 0;
+    LPWSTR* wideArgs = CommandLineToArgvW(GetCommandLineW(), &wideCount);
+    if (wideArgs) {
+        if (wideCount == argc) {
+            for (int i = 0; i < argc; ++i) {
+                const int bytes = WideCharToMultiByte(CP_UTF8, 0, wideArgs[i], -1, nullptr, 0, nullptr, nullptr);
+                if (bytes <= 1) continue;
+                std::string utf8(static_cast<size_t>(bytes), '\0');
+                WideCharToMultiByte(CP_UTF8, 0, wideArgs[i], -1, &utf8[0], bytes, nullptr, nullptr);
+                utf8.resize(static_cast<size_t>(bytes - 1));
+                args[static_cast<size_t>(i)] = utf8;
+            }
+        }
+        LocalFree(wideArgs);
+    }
+#endif
+    return args;
+}
+
 int runCliMode(const std::string& mode, const std::string& inputPath,
                const std::string& outputPath) {
     ConsoleUI ui(std::cin, std::cout);
@@ -39,8 +75,9 @@ int runCliMode(const std::string& mode, const std::string& inputPath,
 } // namespace
 
 int main(int argc, char* argv[]) {
+    const std::vector<std::string> args = utf8Arguments(argc, argv);
     if (argc == 2) {
-        const std::string arg = argv[1];
+        const std::string arg = args[1];
         if (arg == "--help" || arg == "-h") {
             printHelp();
             return 0;
@@ -67,10 +104,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    const std::string mode = argv[1];
+    const std::string mode = args[1];
     if (mode != "-c" && mode != "-d" && mode != "-v") {
         std::cerr << "Loi: Che do khong hop le '" << mode << "'. Dung '--help' de xem huong dan.\n";
         return 1;
     }
-    return runCliMode(mode, argv[2], argv[3]);
+    return runCliMode(mode, args[2], args[3]);
 }

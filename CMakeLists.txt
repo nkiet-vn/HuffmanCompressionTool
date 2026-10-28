@@ -12,7 +12,7 @@ endif()
 
 # Cờ cảnh báo
 if(MSVC)
-    add_compile_options(/W4)
+    add_compile_options(/W4 /utf-8)   # đọc source UTF-8 đúng, không phụ thuộc bảng mã máy
 else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()

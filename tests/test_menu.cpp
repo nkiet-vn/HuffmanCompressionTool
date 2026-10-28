@@ -1,4 +1,4 @@
-// Test cho menu console: ConsoleUI (định dạng, đọc input) và MenuController (luồng chọn chức năng).
+﻿// Test cho menu console: ConsoleUI (định dạng, đọc input) và MenuController (luồng chọn chức năng).
 #undef NDEBUG
 #include <cassert>
 #include <filesystem>
@@ -70,6 +70,17 @@ void testConfirmDefaults() {
     CHECK(ui.confirm("q2", false) == true);   // "Y"
     CHECK(ui.confirm("q3", false) == true);   // "yes"
     CHECK(ui.confirm("q4", true) == false);   // "n"
+}
+
+void testReadNonEmptyLineStripsQuotes() {
+    std::istringstream in("\"C:\\a b\\file.txt\"\n  'x.bin'  \n\"\"\nok\n\"lech\n");
+    std::ostringstream out;
+    ConsoleUI ui(in, out);
+
+    CHECK(ui.readNonEmptyLine("> ") == "C:\\a b\\file.txt");  // ngoặc kép kép
+    CHECK(ui.readNonEmptyLine("> ") == "x.bin");               // ngoặc đơn + khoảng trắng
+    CHECK(ui.readNonEmptyLine("> ") == "ok");                  // "" rỗng -> hỏi lại
+    CHECK(ui.readNonEmptyLine("> ") == "\"lech");              // ngoặc không đủ cặp: giữ nguyên
 }
 
 void testReadNonEmptyLineRetries() {
@@ -286,6 +297,7 @@ int main() {
     testReadChoiceHandlesEof();
     testConfirmDefaults();
     testReadNonEmptyLineRetries();
+    testReadNonEmptyLineStripsQuotes();
     testFormatBytes();
     testMenuRendersAllItems();
     testTableAlignment();

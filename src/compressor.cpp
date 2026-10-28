@@ -1,4 +1,5 @@
-#include "compressor.h"
+﻿#include "compressor.h"
+#include "pathUtil.h"
 #include "bitWriter.h"
 #include "huffmanTree.h"
 #include <fstream>
@@ -21,14 +22,14 @@ bool Compressor::compress(const std::string& inputPath, const std::string& outpu
     std::error_code ec;
 
     // Kiểm tra trùng file bằng filesystem::equivalent
-    if (fs::exists(inputPath, ec) && fs::exists(outputBinPath, ec) && 
-        fs::equivalent(inputPath, outputBinPath, ec)) {
+    if (fs::exists(toPath(inputPath), ec) && fs::exists(toPath(outputBinPath), ec) &&
+        fs::equivalent(toPath(inputPath), toPath(outputBinPath), ec)) {
         std::cerr << "Loi: file nguon va file dich khong duoc trung nhau!\n";
         return false;
     }
 
     // Lượt 1: đếm tần suất
-    std::ifstream in(inputPath, std::ios::binary);
+    std::ifstream in(toPath(inputPath), std::ios::binary);
     if (!in.is_open()) {
         std::cerr << "Loi: Khong mo duoc file nguon " << inputPath << "\n";
         return false;
@@ -54,7 +55,7 @@ bool Compressor::compress(const std::string& inputPath, const std::string& outpu
 
     // Ghi ra file tạm để tránh ghi đè file gốc
     std::string tempPath = outputBinPath + ".tmp";
-    std::ofstream out(tempPath, std::ios::binary);
+    std::ofstream out(toPath(tempPath), std::ios::binary);
     if (!out.is_open()) {
         std::cerr << "Loi: Khong tao duoc file " << tempPath << "\n";
         return false;
@@ -95,13 +96,13 @@ bool Compressor::compress(const std::string& inputPath, const std::string& outpu
     in.close();
     
     if (out.fail()) {
-        fs::remove(tempPath, ec);
+        fs::remove(toPath(tempPath), ec);
         return false;
     }
     
     // Đổi tên file tạm thành file đích
-    fs::remove(outputBinPath, ec);
-    fs::rename(tempPath, outputBinPath, ec);
+    fs::remove(toPath(outputBinPath), ec);
+    fs::rename(toPath(tempPath), toPath(outputBinPath), ec);
     if (ec) {
         std::cerr << "Loi: Khong doi ten duoc file tam: " << ec.message() << "\n";
         return false;

@@ -1,32 +1,38 @@
-#ifndef MIN_HEAP_H
+﻿#ifndef MIN_HEAP_H
 #define MIN_HEAP_H
 
 #include <cstddef>
+#include <memory>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
-#include "huffmanNode.h"
+#include "huffmanTree.h"
 
-// MinHeap các MinHeapNode* theo tần suất (freq nhỏ nhất ở đỉnh).
+// Min-Heap tự viết chứa các nút cây Huffman (HuffmanNode).
+// Khóa so sánh: (freq, minSymbol) tăng dần, đúng đặc tả trong docs/fileFormat.md mục 3.
+// Dùng chung một kiểu nút với cây Huffman nên không cần chuyển đổi và không cần xóa thủ công:
+// shared_ptr tự giải phóng cây khi không còn ai giữ.
 class MinHeap {
 public:
-    void push(MinHeapNode* node) {                 // O(log n)
-        if (node == nullptr) throw std::invalid_argument("MinHeap::push: node is null");
-        data_.push_back(node);
+    using NodePtr = std::shared_ptr<HuffmanNode>;
+
+    void push(NodePtr node) {                      // O(log n)
+        if (!node) throw std::invalid_argument("MinHeap::push: node is null");
+        data_.push_back(std::move(node));
         siftUp(data_.size() - 1);
     }
 
-    MinHeapNode* pop() {                           // O(log n)
+    NodePtr pop() {                                // O(log n)
         if (empty()) throw std::out_of_range("MinHeap::pop: heap is empty");
-        MinHeapNode* minNode = data_.front();
-        data_.front() = data_.back();
+        NodePtr minNode = std::move(data_.front());
+        data_.front() = std::move(data_.back());
         data_.pop_back();
         if (!data_.empty()) siftDown(0);
         return minNode;
     }
 
-    MinHeapNode* top() const {                     // O(1)
+    const NodePtr& top() const {                   // O(1)
         if (empty()) throw std::out_of_range("MinHeap::top: heap is empty");
         return data_.front();
     }
@@ -35,11 +41,11 @@ public:
     bool empty() const { return data_.empty(); }
 
 private:
-    std::vector<MinHeapNode*> data_;
+    std::vector<NodePtr> data_;
 
     static std::size_t parent(std::size_t i) { return (i - 1) / 2; }
 
-    static bool less(const MinHeapNode* a, const MinHeapNode* b) {
+    static bool less(const NodePtr& a, const NodePtr& b) {
         if (a->freq != b->freq) return a->freq < b->freq;
         return a->minSymbol < b->minSymbol;
     }

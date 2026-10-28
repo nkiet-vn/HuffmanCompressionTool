@@ -1,4 +1,5 @@
-#include <cstdio>
+﻿#include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -6,18 +7,19 @@
 #include <vector>
 #include "compressor.h"
 #include "decompressor.h"
+#include "pathUtil.h"
 
 static int failures = 0;
 
 #define CHECK(cond, msg) do { if (!(cond)) { std::cerr << "FAIL: " << msg << " (" << __LINE__ << ")\n"; failures++; } } while (0)
 
 static void writeFile(const std::string& path, const std::string& content) {
-    std::ofstream f(path, std::ios::binary);
+    std::ofstream f(toPath(path), std::ios::binary);
     f.write(content.data(), static_cast<std::streamsize>(content.size()));
 }
 
 static std::string readFile(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(toPath(path), std::ios::binary);
     return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 }
 
@@ -28,6 +30,22 @@ static void roundTrip(const std::string& name, const std::string& content) {
     CHECK(Decompressor().decompress(bin, dst), name + ": giai nen that bai");
     CHECK(readFile(dst) == content, name + ": du lieu khong khop tu dau den cuoi");
     std::remove(src.c_str()); std::remove(bin.c_str()); std::remove(dst.c_str());
+}
+
+// Đường dẫn có chữ có dấu (UTF-8) phải nén/giải nén được, kể cả trên Windows.
+static void roundTripUnicodePath() {
+    namespace fs = std::filesystem;
+    const std::string dir = "thu_muc_trê", src = dir + "/mẫu_thử.txt",
+                      bin = dir + "/kết_quả.bin", dst = dir + "/khôi_phục.txt";
+    const std::string content = "Nén dữ liệu: ắằẳẵặ ôơư. " + std::string(200, 'x');
+    std::error_code ec;
+    fs::create_directories(toPath(dir), ec);
+    writeFile(src, content);
+    CHECK(Compressor().compress(src, bin), "duong dan Unicode: nen that bai");
+    CHECK(fs::exists(toPath(bin)), "duong dan Unicode: khong thay file .bin");
+    CHECK(Decompressor().decompress(bin, dst), "duong dan Unicode: giai nen that bai");
+    CHECK(readFile(dst) == content, "duong dan Unicode: du lieu khong khop");
+    fs::remove_all(toPath(dir), ec);
 }
 
 static void expectDecodeFails(const std::string& name, const std::string& bytes) {
@@ -48,6 +66,8 @@ int main() {
             for (int b = 0; b < 256; b++) all.push_back(static_cast<char>(b));
         roundTrip("nhi phan 0..255", all);
     }
+
+    roundTripUnicodePath();
 
     // Header hỏng phải bị từ chối
     expectDecodeFails("sai magic", std::string("HF01") + std::string(10, '\0'));

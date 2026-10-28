@@ -1,9 +1,9 @@
-#include "decompressor.h"
+﻿#include "decompressor.h"
+#include "pathUtil.h"
 #include "huffmanTree.h"
 #include "bitReader.h"
 #include <fstream>
 #include <iostream>
-#include <iterator>
 #include <vector>
 #include <filesystem>
 
@@ -28,17 +28,26 @@ namespace
 
 bool Decompressor::decompress(const std::string &inputBinPath, const std::string &outputTxtPath)
 {
-    std::ifstream in(inputBinPath, std::ios::binary);
+    std::ifstream in(toPath(inputBinPath), std::ios::binary);
     if (!in.is_open())
         return fail("Khong mo duoc file nen");
 
-    std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)),
-                              std::istreambuf_iterator<char>());
-    in.close();
+    // Chỉ đọc phần header + bảng tần suất vào RAM (tối đa 14 + 256*9 byte).
+    // Phần dữ liệu bit được BitReader đọc dần từ file, nên bộ nhớ không phụ thuộc kích thước file.
+    in.seekg(0, std::ios::end);
+    const std::streamoff fileSizeRaw = in.tellg();
+    if (!in || fileSizeRaw < 0)
+        return fail("Khong xac dinh duoc kich thuoc file nen");
+    const uint64_t fileSize = static_cast<uint64_t>(fileSizeRaw);
+    in.seekg(0, std::ios::beg);
 
     // 1. Magic + uniqueCount + originalLength
     const size_t fixedHeader = 4 + 2 + 8;
-    if (data.size() < fixedHeader)
+    if (fileSize < fixedHeader)
+        return fail("Header bi thieu du lieu");
+
+    std::vector<uint8_t> data(fixedHeader);
+    if (!in.read(reinterpret_cast<char *>(data.data()), static_cast<std::streamsize>(fixedHeader)))
         return fail("Header bi thieu du lieu");
     if (data[0] != 'H' || data[1] != 'U' || data[2] != 'F' || data[3] != '1')
         return fail("File khong dung dinh dang HUF1");
@@ -50,8 +59,14 @@ bool Decompressor::decompress(const std::string &inputBinPath, const std::string
 
     // 2. Bảng tần suất
     const size_t tableBytes = static_cast<size_t>(uniqueCount) * 9;
-    if (data.size() < fixedHeader + tableBytes)
+    if (fileSize < fixedHeader + tableBytes)
         return fail("Bang tan suat bi thieu du lieu");
+
+    data.resize(fixedHeader + tableBytes);
+    if (tableBytes > 0 &&
+        !in.read(reinterpret_cast<char *>(data.data() + fixedHeader), static_cast<std::streamsize>(tableBytes)))
+        return fail("Bang tan suat bi thieu du lieu");
+    in.close();
 
     uint64_t freq[256] = {};
     uint64_t sum = 0;
@@ -80,7 +95,7 @@ bool Decompressor::decompress(const std::string &inputBinPath, const std::string
     // File rỗng: chỉ có header, không có dữ liệu bit
     if (uniqueCount == 0)
     {
-        std::ofstream emptyOut(outputTxtPath, std::ios::binary);
+        std::ofstream emptyOut(toPath(outputTxtPath), std::ios::binary);
         if (!emptyOut.is_open())
             return fail("Khong tao duoc file giai nen");
         emptyOut.close();
@@ -96,8 +111,8 @@ bool Decompressor::decompress(const std::string &inputBinPath, const std::string
     // 4. Kiểm tra kích thước phần dữ liệu bit ngay từ đầu.
     //    Số bit tối thiểu cần để mã hóa originalLength ký tự phải khớp với số byte còn lại
     //    (chỉ cho phép tối đa 7 bit đệm ở byte cuối).
-    const size_t remainingBytes = data.size() - pos;
-    const uint64_t availableBits = static_cast<uint64_t>(remainingBytes) * 8;
+    const uint64_t remainingBytes = fileSize - pos;
+    const uint64_t availableBits = remainingBytes * 8;
     {
         // Độ dài mã của từng symbol; cây 1 ký tự dùng đúng 1 bit/ký tự.
         uint64_t requiredBits = 0;
@@ -134,7 +149,7 @@ bool Decompressor::decompress(const std::string &inputBinPath, const std::string
     }
 
     // 5. Giải mã bit (MSB-first) dùng BitReader, bỏ qua phần header
-    std::ofstream out(outputTxtPath, std::ios::binary);
+    std::ofstream out(toPath(outputTxtPath), std::ios::binary);
     if (!out.is_open())
         return fail("Khong tao duoc file giai nen");
 
@@ -142,7 +157,7 @@ bool Decompressor::decompress(const std::string &inputBinPath, const std::string
     {
         out.close();
         std::error_code ec;
-        std::filesystem::remove(outputTxtPath, ec);
+        std::filesystem::remove(toPath(outputTxtPath), ec);
     };
 
     bool decodeOk = true;
@@ -201,7 +216,7 @@ bool Decompressor::decompress(const std::string &inputBinPath, const std::string
     if (out.fail())
     {
         std::error_code ec;
-        std::filesystem::remove(outputTxtPath, ec);
+        std::filesystem::remove(toPath(outputTxtPath), ec);
         return false;
     }
     return true;

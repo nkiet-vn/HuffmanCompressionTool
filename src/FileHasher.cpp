@@ -1,4 +1,5 @@
 #include "FileHasher.h"
+#include "pathUtil.h"
 
 #include <cstdint>
 #include <fstream>
@@ -7,7 +8,7 @@
 #include "sha256.h"
 
 std::optional<std::string> computeFileSha256(const std::string& filePath) {
-    std::ifstream input(filePath, std::ios::binary);
+    std::ifstream input(toPath(filePath), std::ios::binary);
     if (!input.is_open()) {
         return std::nullopt;
     }

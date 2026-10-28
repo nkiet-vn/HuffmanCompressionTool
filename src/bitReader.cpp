@@ -1,7 +1,8 @@
-#include "bitReader.h"
+﻿#include "bitReader.h"
+#include "pathUtil.h"
 
 BitReader::BitReader(const std::string& filename) : buffer(0), bitIndex(-1) {
-    file.open(filename, std::ios::binary);
+    file.open(toPath(filename), std::ios::binary);
     if (!file.is_open()) {
         throw std::runtime_error("Lỗi BitReader: Không thể mở file " + filename);
     }
@@ -9,7 +10,7 @@ BitReader::BitReader(const std::string& filename) : buffer(0), bitIndex(-1) {
 
 BitReader::BitReader(const std::string& filename, std::streamoff startOffset)
     : buffer(0), bitIndex(-1) {
-    file.open(filename, std::ios::binary);
+    file.open(toPath(filename), std::ios::binary);
     if (!file.is_open()) {
         throw std::runtime_error("Lỗi BitReader: Không thể mở file " + filename);
     }
