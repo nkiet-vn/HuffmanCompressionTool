@@ -264,7 +264,7 @@ void testMenuFileInfoFlow() {
 
     CHECK(menu.run() == 0);
     CHECK(out.str().find("THONG TIN FILE") != std::string::npos);
-    CHECK(out.str().find("Khong phai HUF1") != std::string::npos);
+    CHECK(out.str().find("Khong phai HUF2/HUF1") != std::string::npos);
 
     removeIfExists(src);
 }

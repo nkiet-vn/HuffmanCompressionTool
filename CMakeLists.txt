@@ -22,6 +22,8 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 add_library(huffman_core
     src/huffmanTree.cpp
     src/bitReader.cpp
+    src/crc32.cpp
+    src/fileFormat.cpp
     src/compressor.cpp
     src/decompressor.cpp
 )
@@ -100,3 +102,7 @@ add_test(NAME verify_samples COMMAND verify_samples WORKING_DIRECTORY ${TEST_WOR
 add_executable(testHuffmanCore tests/test_huffmancore.cpp)
 target_link_libraries(testHuffmanCore PRIVATE huffman_core)
 add_test(NAME huffmanCore COMMAND testHuffmanCore WORKING_DIRECTORY ${TEST_WORK_DIR})
+
+add_executable(test_huf2 tests/test_huf2.cpp)
+target_link_libraries(test_huf2 PRIVATE huffman_core)
+add_test(NAME huf2 COMMAND test_huf2 WORKING_DIRECTORY ${TEST_WORK_DIR})

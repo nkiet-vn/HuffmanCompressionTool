@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <random>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -19,6 +20,15 @@ struct Sample {
     bool expectSmaller;  // file đủ lớn thì file nén phải nhỏ hơn file gốc
 };
 
+// Đọc byte thứ 5 của file nén (mode HUF2): 0 = HUFFMAN, 1 = STORED.
+static std::string modeLabel(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    char header[5] = {};
+    if (!in.read(header, 5) || header[0] != 'H' || header[1] != 'U' || header[2] != 'F' || header[3] != '2')
+        return "?";
+    return header[4] == 0 ? "HUFFMAN" : (header[4] == 1 ? "STORED" : "?");
+}
+
 static void writeFile(const std::string& path, const std::string& content) {
     std::ofstream out(path, std::ios::binary);
     out.write(content.data(), static_cast<std::streamsize>(content.size()));
@@ -28,6 +38,14 @@ static std::string repeat(const std::string& text, int times) {
     std::string result;
     for (int i = 0; i < times; ++i) result += text;
     return result;
+}
+
+// Du lieu ngau nhien (khong nen duoc) de kiem tra mode STORED tren file lon.
+static std::string randomBytes(std::size_t size, std::uint32_t seed) {
+    std::mt19937 rng(seed);
+    std::string out(size, '\0');
+    for (std::size_t i = 0; i < size; ++i) out[i] = static_cast<char>(rng() & 0xFFu);
+    return out;
 }
 
 int main(int argc, char** argv) {
@@ -50,9 +68,12 @@ int main(int argc, char** argv) {
         samples.push_back({name, path, expectSmaller});
     };
 
-    add("ngan", "Xin chao Huffman!", false);          // file ngắn: có thể nén ra lớn hơn
+    // File ngắn giờ KHÔNG còn bị phình: chọn STORED, chỉ tốn thêm HEADER_SIZE byte.
+    add("ngan", "Xin chao Huffman!", false);
     add("dai", repeat(english, 3000), true);          // file dài (~400 KB)
     add("tieng_viet_utf8", repeat(vietnamese, 200), true);
+    // Dữ liệu ngẫu nhiên: không nén được -> STORED, kích thước = gốc + 17.
+    add("ngau_nhien", randomBytes(5000000u, 20261029u), false);
 
     for (int i = 1; i < argc; ++i) {                  // file thật do người dùng truyền vào
         samples.push_back({fs::path(argv[i]).filename().string(), argv[i], false});
@@ -63,8 +84,8 @@ int main(int argc, char** argv) {
     CompressionVerifier verifier(compressor, decompressor);
 
     std::ostringstream table;
-    table << "| File | Goc (byte) | Nen (byte) | Ty le nen | Hash | Ket qua |\n";
-    table << "|---|---:|---:|---:|---|---|\n";
+    table << "| File | Goc (byte) | Nen (byte) | Ty le nen | Mode | Hash | Ket qua |\n";
+    table << "|---|---:|---:|---:|---|---|---|\n";
 
     int failures = 0;
     for (const Sample& s : samples) {
@@ -77,6 +98,11 @@ int main(int argc, char** argv) {
             ok = false;
             log << "Loi: file nen khong nho hon file goc\n";
         }
+        // Với định dạng HUF2, file nén không bao giờ lớn hơn gốc quá HEADER_SIZE (17) byte.
+        if (ok && r.info && r.info->compressedSize > r.info->originalSize + 17) {
+            ok = false;
+            log << "Loi: file nen vuot qua goc + 17 byte\n";
+        }
         if (!ok) {
             ++failures;
             std::cout << "--- Chi tiet loi: " << s.name << " ---\n" << log.str();
@@ -85,9 +111,10 @@ int main(int argc, char** argv) {
         std::string original = r.info ? std::to_string(r.info->originalSize) : "?";
         std::string compressed = r.info ? std::to_string(r.info->compressedSize) : "?";
         std::string ratio = r.info ? formatCompressionRatio(r.info->ratioPercent) : "?";
+        const std::string bin = dir + "/" + s.name + ".bin";
         table << "| " << s.name << " | " << original << " | " << compressed << " | "
-              << ratio << " | " << (r.hashMatch ? "KHOP" : "KHONG KHOP") << " | "
-              << (ok ? "PASS" : "FAIL") << " |\n";
+              << ratio << " | " << modeLabel(bin) << " | " << (r.hashMatch ? "KHOP" : "KHONG KHOP")
+              << " | " << (ok ? "PASS" : "FAIL") << " |\n";
     }
 
     std::cout << table.str();

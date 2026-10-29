@@ -1,4 +1,4 @@
-#include "menuController.h"
+﻿#include "menuController.h"
 #include "pathUtil.h"
 
 #include <filesystem>
@@ -7,6 +7,7 @@
 
 #include "compressionStats.h"
 #include "fileHasher.h"
+#include "fileFormat.h"
 #include "compressor.h"
 #include "decompressor.h"
 
@@ -16,7 +17,7 @@ namespace
 {
 
     constexpr const char *kToolName = "Huffman Compression Tool";
-    constexpr const char *kVersion = "1.0.0";
+    constexpr const char *kVersion = "1.1.0";
 
     bool isRegularFile(const std::string &path)
     {
@@ -32,10 +33,10 @@ MenuController::MenuController(ConsoleUI &ui, Compressor &compressor, Decompress
 std::vector<MenuItem> MenuController::buildMenuItems() const
 {
     return {
-        {"1", "Nen file", "nen file bat ky thanh dinh dang HUF1"},
+        {"1", "Nen file", "nen file bat ky thanh dinh dang HUF2"},
         {"2", "Giai nen file", "khoi phuc file tu .bin"},
         {"3", "Nen va xac minh SHA-256", "nen + giai nen lai + so sanh hash"},
-        {"4", "Xem thong tin file", "kich thuoc, dinh dang HUF1"},
+        {"4", "Xem thong tin file", "kich thuoc, dinh dang HUF2"},
         {"5", "Huong dan / tro giup", "cach dung dong lenh"},
         {"6", "Thong tin phan mem", "phien ban, cau truc du lieu chinh"},
         {"0", "Thoat", ""},
@@ -142,7 +143,7 @@ bool MenuController::decompressFile(const std::string &inputPath, const std::str
     ui_.showInfo("Dang giai nen: " + inputPath + "  ->  " + outputPath);
     if (!decompressor_.decompress(inputPath, outputPath))
     {
-        ui_.showError("Giai nen that bai. File .bin co the bi hong hoac khong dung dinh dang HUF1.");
+        ui_.showError("Giai nen that bai. File .bin co the bi hong hoac khong dung dinh dang HUF2/HUF1.");
         return false;
     }
 
@@ -217,8 +218,11 @@ void MenuController::showFileInfo(const std::string &path) const
     const bool hasMagic = static_cast<bool>(probe.read(magic, 4));
     probe.close();
 
-    const bool isHuf1 = hasMagic && magic[0] == 'H' && magic[1] == 'U' && magic[2] == 'F' && magic[3] == '1';
-    ui_.showKeyValue("Dinh dang", isHuf1 ? "HUF1 (da nen)" : "Khong phai HUF1 (file thuong)");
+    const int version = hasMagic ? detectFormatVersion(magic) : 0;
+    const char *formatName = version == 2 ? "HUF2 (da nen)"
+                            : version == 1 ? "HUF1 (da nen, dinh dang cu)"
+                                           : "Khong phai HUF2/HUF1 (file thuong)";
+    ui_.showKeyValue("Dinh dang", formatName);
 
     if (const std::optional<std::string> hash = computeFileSha256(path))
         ui_.showKeyValue("SHA-256", *hash);
@@ -323,7 +327,7 @@ void MenuController::handleAbout() const
     ui_.showKeyValue("Ten", kToolName);
     ui_.showKeyValue("Phien ban", kVersion);
     ui_.showKeyValue("Ngon ngu", "C++17");
-    ui_.showKeyValue("Dinh dang file", "HUF1 (xem docs/fileFormat.md)");
+    ui_.showKeyValue("Dinh dang file", "HUF2, doc duoc ca HUF1 (xem docs/fileFormat.md)");
     ui_.showKeyValue("Cau truc du lieu", "Min-Heap tu viet (khoa: freq, minSymbol)");
-    ui_.showKeyValue("Toan ven du lieu", "Kiem tra SHA-256 khi dung -v");
+    ui_.showKeyValue("Toan ven du lieu", "CRC32 cua du lieu goc (HUF2) + SHA-256 khi dung -v");
 }

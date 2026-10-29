@@ -17,6 +17,8 @@ HuffmanCompressionTool/
 ├── include/
 │   ├── bitWriter.h             # Ghi bit ra stream
 │   ├── bitReader.h             # Đọc bit từ stream (có hỗ trợ offset)
+│   ├── crc32.h                 # CRC-32 IEEE 802.3 (bảng tra 256 phần tử)
+│   ├── fileFormat.h            # Hằng số HUF2 + LEB128 + little-endian dùng chung
 │   ├── huffmanTree.h           # Cây Huffman, HuffmanNode (kiểu nút duy nhất) và bảng mã
 │   ├── minHeap.h               # Min-Heap tự viết, chứa HuffmanNode (khóa: freq, minSymbol)
 │   ├── compressor.h            # Class nén
@@ -36,6 +38,8 @@ HuffmanCompressionTool/
 │   ├── compressor.cpp          # Logic nén (ghi qua file tạm rồi đổi tên)
 │   ├── decompressor.cpp        # Logic giải nén (dùng BitReader)
 │   ├── bitReader.cpp           # Đọc bit từ file
+│   ├── crc32.cpp               # Cài đặt CRC-32 (tự viết, không thư viện ngoài)
+│   ├── fileFormat.cpp          # Tiện ích định dạng (LEB128, little-endian, nhận diện magic)
 │   ├── compressionStats.cpp    # Tính toán thống kê
 │   ├── compressionVerifier.cpp # Xác minh toàn vẹn
 │   ├── fileHasher.cpp          # Hash file
@@ -50,6 +54,7 @@ HuffmanCompressionTool/
     ├── test_compress.cpp
     ├── test_huffmancore.cpp
     ├── testT10.cpp
+    ├── test_huf2.cpp           # HUF2: round-trip, giới hạn kích thước, CRC, HUF1 cũ, fuzz
     └── verify_samples.cpp
 ```
 
@@ -102,10 +107,10 @@ huffman --menu     # hoặc -m
   Huffman Compression Tool  v1.0.0
   Cong cu nen va giai nen file bang thuat toan Huffman
 ==============================================================
-   [1] Nen file                                nen file bat ky thanh dinh dang HUF1
+   [1] Nen file                                nen file bat ky thanh dinh dang HUF2
    [2] Giai nen file                           khoi phuc file tu .bin
    [3] Nen va xac minh SHA-256                 nen + giai nen lai + so sanh hash
-   [4] Xem thong tin file                      kich thuoc, dinh dang HUF1
+   [4] Xem thong tin file                      kich thuoc, dinh dang HUF2
    [5] Huong dan / tro giup                    cach dung dong lenh
    [6] Thong tin phan mem                      phien ban, cau truc du lieu chinh
    [0] Thoat
@@ -119,7 +124,7 @@ Chon chuc nang [0-6]:
 - Nhập đường dẫn file nguồn không tồn tại → báo lỗi và quay lại menu.
 - File đích đã tồn tại → hỏi xác nhận ghi đè (`[y/N]`).
 - Kết quả in dạng bảng có căn lề: kích thước (B/KB/MB), tỷ lệ nén, SHA-256.
-- Mục `[4]` nhận diện file HUF1 hay file thường; mục `[5]`/`[6]` in hướng dẫn và thông tin phần mềm.
+- Mục `[4]` nhận diện file HUF2, HUF1 cũ hay file thường; mục `[5]`/`[6]` in hướng dẫn và thông tin phần mềm.
 
 ### Dòng lệnh
 
@@ -148,7 +153,12 @@ Tham số sai (chế độ không hợp lệ, thiếu đối số) luôn báo l�
 - **Min-Heap tự viết** (`include/minHeap.h`) là cấu trúc dữ liệu chính để dựng cây Huffman,
   so sánh theo khóa `(freq, minSymbol)` đúng đặc tả trong `docs/fileFormat.md`.
 - **BitWriter/BitReader** đọc ghi bit MSB-first; bộ giải nén dùng `BitReader` (không còn lambda trùng lặp).
-- **Xác minh toàn vẹn** bằng SHA-256 (`-v`).
+- **Tự chọn HUFFMAN / STORED**: file nén **không bao giờ lớn hơn gốc quá 17 byte** (header),
+  nên file nhỏ hay dữ liệu ngẫu nhiên không còn bị phình.
+- **CRC32 trong file** (`src/crc32.cpp`, bảng tra 256 phần tử): bộ giải nén tự kiểm tra dữ liệu gốc,
+  sửa 1 bit là phát hiện được; đồng thời vẫn xác minh bằng SHA-256 (`-v`).
+- **Bảng tần suất nén bằng LEB128** thay vì 9 byte/ký tự.
+- **Tương thích ngược**: vẫn giải nén được file HUF1 cũ.
 - **Thống kê tỷ lệ nén** hiển thị ngay trên CLI.
 - **An toàn dữ liệu**: từ chối nén khi nguồn đích trùng nhau (kiểm tra bằng
   `std::filesystem::equivalent`, kể cả khi đường dẫn viết khác nhau); ghi ra file tạm rồi đổi tên;
@@ -165,11 +175,16 @@ Tóm tắt:
 
 | Phần | Kích thước |
 |---|---|
-| magic `"HUF1"` | 4 byte |
-| uniqueCount | 2 byte |
-| originalLength | 8 byte |
-| Bảng tần suất (symbol + freq) | uniqueCount × 9 byte |
-| Dữ liệu bit (MSB-first, đệm 0) | phần còn lại |
+| magic `"HUF2"` | 4 byte |
+| mode (0 = HUFFMAN, 1 = STORED) | 1 byte |
+| originalLength | 8 byte (uint64 LE) |
+| crc32 của dữ liệu gốc | 4 byte |
+| *(chỉ HUFFMAN)* uniqueCount | 2 byte |
+| *(chỉ HUFFMAN)* bảng tần suất (symbol + freq LEB128) | ~2–3 byte/symbol |
+| Dữ liệu | HUFFMAN: bit MSB-first + đệm 0; STORED: byte gốc |
+
+Header cố định 17 byte. Từ HUF1 cũ: header 14 byte, bảng 9 byte/symbol, không checksum, không có
+mode STORED — vẫn đọc được nhưng không ghi nữa.
 
 ## Kiểm thử
 
@@ -180,8 +195,9 @@ Tóm tắt:
 | `bitReader` | Đọc bit MSB-first |
 | `bitWriter` | Ghi bit MSB-first |
 | `huffmanCore` | Thứ tự heap, tie-break, prefix-free, cây 1 ký tự |
-| `roundtrip` | Nén rồi giải nén, so sánh từng byte; từ chối header hỏng |
-| `compress` | Khớp đặc tả HUF1, file rỗng, file 1 ký tự, file thiếu |
+| `roundtrip` | Nén rồi giải nén, so sánh từng byte; từ chối header hỏng HUF1/HUF2 |
+| `compress` | Khớp đặc tả HUF2 (ví dụ `"aab"`), bố cục HUFFMAN, file rỗng, file nhỏ không phình |
+| `huf2` | Round-trip 7 loại file, giới hạn `nén <= gốc + 17`, lỗi CRC khi sửa bit, header hỏng, HUF1 cũ, fuzz 500 lần |
 | `menu` | ConsoleUI (trim, EOF, bảng, tag thông báo) + luồng menu nén/giải nén/xác minh/thông tin |
 | `testT10` | SHA-256, thống kê, xác minh |
 | `verify_samples` | Kiểm thử tổng hợp với file mẫu |
@@ -221,10 +237,13 @@ Tiêu đề commit bắt đầu bằng mã ticket Jira, theo mẫu `DSA-<số>: 
 - File văn bản 100 MB: nén ~1.7 s, giải nén ~4.8 s
 - File ngẫu nhiên 100 MB: nén ~6.1 s, giải nén ~10.7 s
 
-Giải nén đọc phần header vào RAM rồi dùng `BitReader` đọc phần dữ liệu bit (không cần ghi file tạm).
+Giải nén đọc phần header vào RAM rồi dùng `BitReader` đọc phần dữ liệu bit. Cả nén và giải nén xử lý
+theo khối 64 KB (`IO_CHUNK_SIZE`) và tính CRC32 trên luồng dữ liệu, nên bộ nhớ không phụ thuộc kích thước file.
 
 ## Hạn chế và hướng cải tiến
 
-- Header tốn 9 byte mỗi ký tự nên file rất ngắn có thể nén ra lớn hơn gốc (chương trình cảnh báo rõ trên CLI).
-  Hướng cải tiến: Canonical Huffman để chỉ lưu độ dài mã, hoặc chế độ "lưu nguyên" khi nén không có lợi.
-- Chưa hỗ trợ nén theo khối (streaming).
+- File nén luôn tốn thêm header cố định 17 byte, nên file cực ngắn (1–17 byte) vẫn lớn hơn gốc đúng
+  chừng đó — nhưng không bao giờ phình quá `gốc + 17`, khác hẳn HUF1 trước đây (file 17 byte ra 139 byte).
+  Hướng cải tiến: Canonical Huffman để chỉ lưu độ dài mã.
+- Chưa hỗ trợ nén theo khối (streaming): nén đọc file nguồn 2 lượt (lượt 1 đếm tần suất + CRC,
+  lượt 2 mã hóa).

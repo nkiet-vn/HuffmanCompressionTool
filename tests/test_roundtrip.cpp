@@ -7,6 +7,7 @@
 #include <vector>
 #include "compressor.h"
 #include "decompressor.h"
+#include "fileFormat.h"
 #include "pathUtil.h"
 
 static int failures = 0;
@@ -69,11 +70,19 @@ int main() {
 
     roundTripUnicodePath();
 
-    // Header hỏng phải bị từ chối
-    expectDecodeFails("sai magic", std::string("HF01") + std::string(10, '\0'));
-    expectDecodeFails("header thieu", std::string("HUF1"));
-    expectDecodeFails("uniqueCount > 256", std::string("HUF1") + std::string("\x01\x01", 2) + std::string(8, '\0'));
-    expectDecodeFails("rong nhung co length", std::string("HUF1") + std::string("\x00\x00", 2) + std::string("\x05", 1) + std::string(7, '\0'));
+    // Header hỏng phải bị từ chối (HUF2 và HUF1)
+    expectDecodeFails("sai magic", std::string("HF01") + std::string(20, '\0'));
+    expectDecodeFails("header thieu", std::string("HUF2"));
+    expectDecodeFails("HUF1 header thieu", std::string("HUF1"));
+    expectDecodeFails("HUF2 mode la", std::string("HUF2") + std::string("\x02", 1) + std::string(20, '\0'));
+    expectDecodeFails("HUF2 uniqueCount > 256", std::string("HUF2") + std::string("\x00", 1) +
+                                                   std::string(8, '\0') + std::string(4, '\0') +
+                                                   std::string("\x01\x01", 2));
+    expectDecodeFails("HUF2 rong nhung co length", std::string("HUF2") + std::string("\x00", 1) +
+                                                         std::string("\x05", 1) + std::string(7, '\0') +
+                                                         std::string(4, '\0') + std::string("\x00\x00", 2));
+    expectDecodeFails("HUF1 uniqueCount > 256", std::string("HUF1") + std::string("\x01\x01", 2) + std::string(8, '\0'));
+    expectDecodeFails("HUF1 rong nhung co length", std::string("HUF1") + std::string("\x00\x00", 2) + std::string("\x05", 1) + std::string(7, '\0'));
 
     if (failures == 0) std::cout << "Tat ca test round-trip da PASS\n";
     return failures == 0 ? 0 : 1;
