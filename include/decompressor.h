@@ -2,27 +2,21 @@
 #define DECOMPRESSOR_H
 
 #include <string>
-#include <vector>
-#include <memory>
-#include <cstdint>
+#include "iCodec.h"
 
-struct HuffmanNode {
-    uint8_t symbol;
-    uint64_t freq;
-    bool isLeaf;
-    std::shared_ptr<HuffmanNode> left;
-    std::shared_ptr<HuffmanNode> right;
-
-    HuffmanNode(uint8_t sym, uint64_t f) 
-        : symbol(sym), freq(f), isLeaf(true), left(nullptr), right(nullptr) {}
-
-    HuffmanNode(uint64_t f, std::shared_ptr<HuffmanNode> l, std::shared_ptr<HuffmanNode> r) 
-        : symbol(0), freq(f), isLeaf(false), left(l), right(r) {}
-};
-
-class Decompressor {
+// Giải nén file .bin: đọc HUF3 và vẫn đọc được HUF2/HUF1 (tương thích ngược).
+// Với HUF2/HUF3, kiểm tra CRC32 của dữ liệu gốc và xóa file đích nếu không khớp.
+class Decompressor : public IDecompressor {
 public:
-    static bool decompress(const std::string& inputBinPath, const std::string& outputTxtPath);
+    bool decompress(const std::string& inputBinPath, const std::string& outputTxtPath) override;
+    bool decompressWithProgress(const std::string& inputBinPath, const std::string& outputTxtPath,
+                                const ProgressCallback& progress) override;
+    MessageId lastError() const override { return lastError_; }
+    const std::string& lastErrorDetails() const override { return lastErrorDetails_; }
+
+private:
+    MessageId lastError_ = MessageId::None;
+    std::string lastErrorDetails_;
 };
 
 #endif // DECOMPRESSOR_H

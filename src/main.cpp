@@ -1,257 +1,150 @@
+#include <cstdlib>
 #include <iostream>
-#include <fstream>
 #include <string>
-#include <cstdint>
-#include "decompressor.h" // Thêm header giải nén của DSA-71
+#include <vector>
 
-using namespace std;
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#ifdef _MSC_VER
+#pragma comment(lib, "shell32.lib")
+#endif
+#endif
 
-bool countFrequency(const string& fileName, uint64_t freq[256]) {
-    for (int i = 0; i < 256; i++)
-        freq[i] = 0;
+#include "compressor.h"
+#include "consoleUI.h"
+#include "decompressor.h"
+#include "menuController.h"
+#include "messages.h"
 
-    ifstream file(fileName, ios::binary);
-    if (!file.is_open()) {
-        cout << "Khong mo duoc file nguon!\n";
-        return false;
-    }
+namespace
+{
 
-    char ch;
-    while (file.get(ch)) {
-        unsigned char byte = static_cast<unsigned char>(ch);
-        freq[byte]++;
-    }
-
-    return !file.bad();
+void printHelp(bool ascii)
+{
+    std::cout << message(MessageId::CliTitle, ascii) << "\n\n";
+    std::cout << message(MessageId::Usage, ascii) << "\n";
+    std::cout << message(MessageId::CliCompress, ascii) << "\n";
+    std::cout << message(MessageId::CliDecompress, ascii) << "\n";
+    std::cout << message(MessageId::CliVerify, ascii) << "\n";
+    std::cout << message(MessageId::CliInfo, ascii) << "\n";
+    std::cout << message(MessageId::CliMenu, ascii) << "\n";
+    std::cout << message(MessageId::CliHelp, ascii) << "\n";
+    std::cout << message(MessageId::CliAscii, ascii) << "\n\n";
+    std::cout << message(MessageId::CliNoArgs, ascii) << "\n\n";
+    std::cout << message(MessageId::CliExamples, ascii) << "\n";
+    std::cout << message(MessageId::CliExampleCompress, ascii) << "\n";
+    std::cout << message(MessageId::CliExampleDecompress, ascii) << "\n";
+    std::cout << message(MessageId::CliExampleInfo, ascii) << "\n";
+    std::cout << message(MessageId::CliExampleVerify, ascii) << "\n";
 }
 
-bool writeUint64LE(ofstream& file, uint64_t value) {
-    for (int i = 0; i < 8; i++) {
-        char byte = static_cast<char>(value & 0xFF);
-        file.put(byte);
-        value >>= 8;
-    }
-    return file.good();
-}
-
-bool readUint64LE(ifstream& file, uint64_t& value) {
-    value = 0;
-
-    for (int i = 0; i < 8; i++) {
-        char ch;
-        if (!file.get(ch))
-            return false;
-
-        uint64_t byte = static_cast<unsigned char>(ch);
-        value |= byte << (i * 8);
-    }
-
-    return true;
-}
-
-bool writeHeader(ofstream& file, const uint64_t freq[256]) {
-    const char magic[4] = {'H', 'F', '0', '1'};
-    file.write(magic, 4);
-
-    for (int i = 0; i < 256; i++) {
-        if (!writeUint64LE(file, freq[i]))
-            return false;
-    }
-
-    return file.good();
-}
-
-bool readHeader(ifstream& file, uint64_t freq[256]) {
-    char magic[4];
-
-    if (!file.read(magic, 4))
-        return false;
-
-    if (magic[0] != 'H' || magic[1] != 'F' ||
-        magic[2] != '0' || magic[3] != '1') {
-        cout << "Header khong hop le!\n";
-        return false;
-    }
-
-    for (int i = 0; i < 256; i++) {
-        if (!readUint64LE(file, freq[i])) {
-            cout << "Header bi thieu du lieu!\n";
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool writeBinFile(const string& source, const string& destination,
-                  const uint64_t freq[256]) {
-    if (source == destination) {
-        cout << "File nguon va file dich khong duoc trung nhau!\n";
-        return false;
-    }
-
-    ifstream in(source, ios::binary);
-    if (!in.is_open()) {
-        cout << "Khong mo duoc file nguon!\n";
-        return false;
-    }
-
-    ofstream out(destination, ios::binary);
-    if (!out.is_open()) {
-        cout << "Khong tao duoc file .bin!\n";
-        return false;
-    }
-
-    if (!writeHeader(out, freq)) {
-        cout << "Loi khi ghi header!\n";
-        return false;
-    }
-
-    char buffer[65536];
-
-    while (true) {
-        in.read(buffer, sizeof(buffer));
-        streamsize bytesRead = in.gcount();
-
-        if (bytesRead > 0) {
-            out.write(buffer, bytesRead);
-            if (!out) {
-                cout << "Loi khi ghi du lieu!\n";
-                return false;
+std::vector<std::string> utf8Arguments(int argc, char *argv[])
+{
+    std::vector<std::string> args(argv, argv + argc);
+#ifdef _WIN32
+    SetConsoleCP(CP_UTF8);
+    SetConsoleOutputCP(CP_UTF8);
+    int wideCount = 0;
+    LPWSTR *wideArgs = CommandLineToArgvW(GetCommandLineW(), &wideCount);
+    if (wideArgs)
+    {
+        if (wideCount == argc)
+        {
+            for (int i = 0; i < argc; ++i)
+            {
+                const int bytes = WideCharToMultiByte(CP_UTF8, 0, wideArgs[i], -1, nullptr, 0, nullptr, nullptr);
+                if (bytes <= 1)
+                    continue;
+                std::string utf8(static_cast<std::size_t>(bytes), '\0');
+                WideCharToMultiByte(CP_UTF8, 0, wideArgs[i], -1, &utf8[0], bytes, nullptr, nullptr);
+                utf8.resize(static_cast<std::size_t>(bytes - 1));
+                args[static_cast<std::size_t>(i)] = utf8;
             }
         }
-
-        if (in.eof())
-            break;
-
-        if (!in) {
-            cout << "Loi khi doc file nguon!\n";
-            return false;
-        }
+        LocalFree(wideArgs);
     }
-
-    out.close();
-    return !out.fail();
+#endif
+    return args;
 }
 
-bool compareFrequency(const uint64_t a[256], const uint64_t b[256]) {
-    for (int i = 0; i < 256; i++) {
-        if (a[i] != b[i])
-            return false;
-    }
-    return true;
+int runCliMode(const std::vector<std::string> &args, bool ascii)
+{
+    ConsoleUI ui(std::cin, std::cout, ascii);
+    Compressor compressor;
+    Decompressor decompressor;
+    MenuController controller(ui, compressor, decompressor);
+
+    if (args[0] == "-c")
+        return controller.compressFile(args[1], args[2]) ? 0 : 1;
+    if (args[0] == "-d")
+        return controller.decompressFile(args[1], args[2]) ? 0 : 1;
+    if (args[0] == "-v")
+        return controller.compressAndVerify(args[1], args[2]) ? 0 : 1;
+    if (args[0] == "-i")
+        return controller.showFileInfo(args[1]) ? 0 : 1;
+    std::cerr << message(MessageId::InvalidMode, ascii) << args[0]
+              << message(MessageId::InvalidModeHelp, ascii) << "\n";
+    return 1;
 }
 
-bool comparePayload(const string& source, const string& binFile) {
-    ifstream in(source, ios::binary);
-    ifstream bin(binFile, ios::binary);
+} // namespace
 
-    if (!in.is_open() || !bin.is_open())
-        return false;
-
-    uint64_t freq[256];
-
-    if (!readHeader(bin, freq))
-        return false;
-
-    char a[65536], b[65536];
-
-    while (true) {
-        in.read(a, sizeof(a));
-        streamsize sizeA = in.gcount();
-
-        bin.read(b, sizeof(b));
-        streamsize sizeB = bin.gcount();
-
-        if (sizeA != sizeB)
-            return false;
-
-        for (streamsize i = 0; i < sizeA; i++) {
-            if (a[i] != b[i])
-                return false;
-        }
-
-        if (in.eof() && bin.eof())
-            return true;
-
-        if (!in || !bin)
-            return false;
-    }
-}
-
-
-int main(int argc, char* argv[]) {
-    if (argc >= 4) {
-        string mode = argv[1];
-        string inputPath = argv[2];
-        string outputPath = argv[3];
-
-        if (mode == "-d") {
-            cout << "Dang giai nen: " << inputPath << " -> " << outputPath << endl;
-            if (Decompressor::decompress(inputPath, outputPath)) {
-                cout << "Giai nen thành cong!\n";
-                return 0;
-            } else {
-                cerr << "Giai nen that bai!\n";
-                return 1;
-            }
-        }
+int main(int argc, char *argv[])
+{
+#ifdef _MSC_VER
+    char *asciiEnvironment = nullptr;
+    std::size_t environmentLength = 0;
+    const bool hasAsciiEnvironment =
+        _dupenv_s(&asciiEnvironment, &environmentLength, "HUFFMAN_ASCII") == 0 &&
+        asciiEnvironment != nullptr;
+    bool ascii = hasAsciiEnvironment && std::string(asciiEnvironment) == "1";
+    std::free(asciiEnvironment);
+#else
+    const char *asciiEnvironment = std::getenv("HUFFMAN_ASCII");
+    bool ascii = asciiEnvironment != nullptr && std::string(asciiEnvironment) == "1";
+#endif
+    std::vector<std::string> arguments = utf8Arguments(argc, argv);
+    std::vector<std::string> args;
+    args.reserve(arguments.size() > 0 ? arguments.size() - 1 : 0);
+    for (std::size_t i = 1; i < arguments.size(); ++i)
+    {
+        if (arguments[i] == "--ascii")
+            ascii = true;
+        else
+            args.push_back(arguments[i]);
     }
 
-    string inputFile, outputFile;
-
-    cout << "Nhap ten file nguon: ";
-    getline(cin, inputFile);
-
-    cout << "Nhap ten file .bin dau ra: ";
-    getline(cin, outputFile);
-
-    uint64_t freq[256], restoredFreq[256];
-
-    if (!countFrequency(inputFile, freq))
-        return 1;
-
-    cout << "\nBang tan suat byte:\n";
-    for (int i = 0; i < 256; i++) {
-        if (freq[i] > 0)
-            cout << "Byte " << i << ": " << freq[i] << '\n';
+    if (args.empty())
+    {
+        ConsoleUI ui(std::cin, std::cout, ascii);
+        Compressor compressor;
+        Decompressor decompressor;
+        return MenuController(ui, compressor, decompressor).run();
     }
-
-    if (!writeBinFile(inputFile, outputFile, freq)) {
-        cout << "Tao file .bin that bai!\n";
-        return 1;
+    if (args.size() == 1 && (args[0] == "--help" || args[0] == "-h"))
+    {
+        printHelp(ascii);
+        return 0;
     }
-
-    cout << "\nGhi header vao file .bin thanh cong!\n";
-
-    ifstream bin(outputFile, ios::binary);
-    if (!bin.is_open()) {
-        cout << "Khong mo duoc file .bin!\n";
-        return 1;
+    if (args.size() == 1 && (args[0] == "--menu" || args[0] == "-m"))
+    {
+        ConsoleUI ui(std::cin, std::cout, ascii);
+        Compressor compressor;
+        Decompressor decompressor;
+        return MenuController(ui, compressor, decompressor).run();
     }
+    if (args.size() == 2 && args[0] == "-i")
+        return runCliMode(args, ascii);
+    if (args.size() == 3 &&
+        (args[0] == "-c" || args[0] == "-d" || args[0] == "-v"))
+        return runCliMode(args, ascii);
 
-    if (!readHeader(bin, restoredFreq)) {
-        cout << "Doc header that bai!\n";
-        return 1;
-    }
-
-    cout << "Doc header thanh cong!\n";
-
-    if (compareFrequency(freq, restoredFreq))
-        cout << "Kiem tra: Bang tan suat khoi phuc chinh xac.\n";
-    else {
-        cout << "Kiem tra: Bang tan suat khong khop.\n";
-        return 1;
-    }
-
-    bin.close();
-
-    if (comparePayload(inputFile, outputFile))
-        cout << "Kiem tra: Du lieu goc duoc luu day du.\n";
-    else {
-        cout << "Kiem tra: Du lieu khong khop!\n";
-        return 1;
-    }
-
-    return 0;
+    if (!args.empty() && args[0] != "-c" && args[0] != "-d" &&
+        args[0] != "-v" && args[0] != "-i")
+        std::cerr << message(MessageId::InvalidMode, ascii) << args[0]
+                  << message(MessageId::InvalidModeHelp, ascii) << "\n";
+    else
+        std::cerr << message(MessageId::InvalidArgumentCount, ascii) << "\n";
+    return 1;
 }

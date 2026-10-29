@@ -1,14 +1,22 @@
-#ifndef BIT_READER_H
+﻿#ifndef BIT_READER_H
 #define BIT_READER_H
 
-#include <fstream>
-#include <string>
-#include <stdexcept>
+#include <array>
+#include <cstddef>
 #include <cstdint>
+#include <fstream>
+#include <stdexcept>
+#include <string>
 
 class BitReader {
 private:
+    static constexpr std::size_t BUFFER_SIZE = 64 * 1024;
+
     std::ifstream file;
+    std::array<std::uint8_t, BUFFER_SIZE> byteBlock{};
+    std::size_t blockPosition;
+    std::size_t blockSize;
+    bool reachedEnd;
     uint8_t buffer;
     int bitIndex; // Quản lý vị trí bit từ 7 (MSB) xuống 0 (LSB)
 
@@ -16,6 +24,8 @@ private:
 
 public:
     explicit BitReader(const std::string& filename);
+    // Đọc bắt đầu từ offset byte (bỏ qua phần header).
+    BitReader(const std::string& filename, std::streamoff startOffset);
     ~BitReader();
 
     BitReader(const BitReader&) = delete;
