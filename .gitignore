@@ -16,6 +16,8 @@ aab.txt
 aab.bin
 sample.txt
 sample.bin
+tiny.txt
+huf_layout.txt
 empty.txt
 empty.bin
 one.txt
@@ -29,6 +31,21 @@ menu_*.txt
 menu_*.bin
 mi.txt
 menu_in.txt
+t10_*.tmp
+t10_*.txt
+t10_*.bin
+h2*.tmp
+h2*.bin
+h2*.txt
+fz*.tmp
+fz*.bin
+fz*.txt
+guard_*.txt
+guard_*.bin
+huf1_old.txt
+huf1_old.bin
+safety_*.txt
+safety_*.bin
 
 # Log rỗng / file tạm của log
 logs/*.log

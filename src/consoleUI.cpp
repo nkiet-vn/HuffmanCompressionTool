@@ -3,9 +3,15 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdio>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace
 {
@@ -47,18 +53,38 @@ namespace
         return std::string(count, c);
     }
 
-    // Can le phai chuoi cho cac cot so lieu.
+    std::size_t displayWidth(const std::string &text)
+    {
+        std::size_t width = 0;
+        for (std::size_t i = 0; i < text.size(); ++i)
+        {
+            const unsigned char byte = static_cast<unsigned char>(text[i]);
+            if ((byte & 0xC0) != 0x80)
+                ++width;
+        }
+        return width;
+    }
+
     std::string padLeft(const std::string &text, std::size_t width)
     {
-        if (text.size() >= width)
+        const std::size_t actualWidth = displayWidth(text);
+        if (actualWidth >= width)
             return text;
-        return repeat(' ', width - text.size()) + text;
+        return repeat(' ', width - actualWidth) + text;
+    }
+
+    std::string padRight(const std::string &text, std::size_t width)
+    {
+        const std::size_t actualWidth = displayWidth(text);
+        if (actualWidth >= width)
+            return text;
+        return text + repeat(' ', width - actualWidth);
     }
 
 } // namespace
 
-ConsoleUI::ConsoleUI(std::istream &input, std::ostream &output)
-    : input_(input), output_(output) {}
+ConsoleUI::ConsoleUI(std::istream &input, std::ostream &output, bool ascii)
+    : input_(input), output_(output), ascii_(ascii) {}
 
 void ConsoleUI::showHeader(const MenuHeader &header) const
 {
@@ -77,8 +103,8 @@ void ConsoleUI::showMenu(const std::vector<MenuItem> &items) const
     output_ << "\n";
     for (const MenuItem &item : items)
     {
-        output_ << "   " << std::left << std::setw(4) << ("[" + item.key + "]")
-                << std::setw(static_cast<int>(kLabelWidth)) << item.label;
+        const std::string key = "[" + item.key + "]";
+        output_ << "   " << padRight(key, 4) << padRight(item.label, kLabelWidth);
         if (!item.description.empty())
             output_ << "  " << item.description;
         output_ << "\n";
@@ -90,7 +116,7 @@ void ConsoleUI::showSection(const std::string &title) const
 {
     // "--- " + title + " " chiếm title.size() + 5 ký tự, phần còn lại là gạch ngang
     // để đường kẻ đúng bằng kMenuWidth.
-    const std::size_t used = title.size() + 5;
+    const std::size_t used = displayWidth(title) + 5;
     const std::size_t dashes = used < kMenuWidth ? kMenuWidth - used : 0;
     output_ << "\n--- " << title << " " << repeat('-', dashes) << "\n";
 }
@@ -102,27 +128,27 @@ void ConsoleUI::showDivider() const
 
 void ConsoleUI::showSuccess(const std::string &message) const
 {
-    output_ << "[OK] " << message << "\n";
+    output_ << "[" << text(MessageId::SuccessTag) << "] " << message << "\n";
 }
 
 void ConsoleUI::showError(const std::string &message) const
 {
-    output_ << "[LOI] " << message << "\n";
+    output_ << "[" << text(MessageId::ErrorTag) << "] " << message << "\n";
 }
 
 void ConsoleUI::showInfo(const std::string &message) const
 {
-    output_ << "[i] " << message << "\n";
+    output_ << "[" << text(MessageId::InfoTag) << "] " << message << "\n";
 }
 
 void ConsoleUI::showWarning(const std::string &message) const
 {
-    output_ << "[!] " << message << "\n";
+    output_ << "[" << text(MessageId::WarningTag) << "] " << message << "\n";
 }
 
 void ConsoleUI::showKeyValue(const std::string &key, const std::string &value) const
 {
-    output_ << "  " << std::left << std::setw(22) << key << ": " << value << "\n";
+    output_ << "  " << padRight(key, 22) << ": " << value << "\n";
 }
 
 std::string ConsoleUI::readLine(const std::string &prompt) const
@@ -141,13 +167,13 @@ std::string ConsoleUI::readNonEmptyLine(const std::string &prompt) const
         std::string value = stripQuotes(readLine(prompt));
         if (!value.empty())
             return value;
-        showWarning("Gia tri khong duoc de trong. Vui long nhap lai.");
+        showWarning(text(MessageId::EmptyValue));
     }
 }
 
 std::optional<std::string> ConsoleUI::readChoice(const std::string &prompt) const
 {
-    output_ << prompt << std::flush;
+    output_ << (prompt.empty() ? text(MessageId::ChoicePrompt) : prompt) << std::flush;
     std::string line;
     if (!std::getline(input_, line))
         return std::nullopt;
@@ -168,7 +194,7 @@ bool ConsoleUI::confirm(const std::string &question, bool defaultValue) const
 
 void ConsoleUI::waitForEnter(const std::string &prompt) const
 {
-    output_ << prompt << std::flush;
+    output_ << (prompt.empty() ? text(MessageId::WaitPrompt) : prompt) << std::flush;
     std::string line;
     std::getline(input_, line);
 }
@@ -182,11 +208,11 @@ void ConsoleUI::showTable(const std::vector<std::string> &headers,
     // Độ rộng từng cột = max(độ dài header, độ dài ô dài nhất).
     std::vector<std::size_t> widths(headers.size(), 0);
     for (std::size_t col = 0; col < headers.size(); ++col)
-        widths[col] = headers[col].size();
+        widths[col] = displayWidth(headers[col]);
     for (const auto &row : rows)
     {
         for (std::size_t col = 0; col < row.size() && col < widths.size(); ++col)
-            widths[col] = std::max(widths[col], row[col].size());
+            widths[col] = std::max(widths[col], displayWidth(row[col]));
     }
 
     auto printRow = [&](const std::vector<std::string> &cells)
@@ -232,4 +258,24 @@ std::string ConsoleUI::formatBytes(std::uintmax_t bytes)
                << static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0) << " GB";
     }
     return stream.str();
+}
+
+bool ConsoleUI::standardOutputIsTerminal()
+{
+#ifdef _WIN32
+    return _isatty(_fileno(stdout)) != 0;
+#else
+    return isatty(fileno(stdout)) != 0;
+#endif
+}
+
+void ConsoleUI::showProgress(unsigned int percent) const
+{
+    if (&output_ != &std::cout || !standardOutputIsTerminal())
+        return;
+    if (percent > 100)
+        percent = 100;
+    output_ << '\r' << text(MessageId::Progress) << ": " << percent << "%" << std::flush;
+    if (percent == 100)
+        output_ << '\n';
 }

@@ -1,7 +1,9 @@
-// Test định dạng HUF2: round-trip, giới hạn kích thước, CRC32, header hỏng, tương thích HUF1 và fuzz.
+// Test HUF3 round-trip/corruption/fuzz và tương thích ngược HUF2/HUF1.
 // Mỗi test đếm lỗi thay vì assert để fuzz không dừng ở lần hỏng đầu tiên; main trả 1 nếu có lỗi.
 #undef NDEBUG
 #include "compressor.h"
+#include "canonicalHuffman.h"
+#include "compressionStats.h"
 #include "crc32.h"
 #include "decompressor.h"
 #include "fileFormat.h"
@@ -69,9 +71,7 @@ static std::string ratio(std::size_t compressed, std::size_t original) {
     if (original == 0) return "N/A";
     const double value =
         (1.0 - static_cast<double>(compressed) / static_cast<double>(original)) * 100.0;
-    char buffer[32];
-    std::snprintf(buffer, sizeof(buffer), "%.2f", value);
-    return buffer;
+    return formatCompressionRatio(value);
 }
 
 static std::string randomBytes(std::size_t size, std::uint32_t seed)
@@ -115,7 +115,7 @@ static std::vector<Case> allCases()
 
 static void testRoundTripAndSizeBound()
 {
-    std::cout << "[HUF2] Round-trip tung byte + gioi han kich thuoc\n";
+    std::cout << "[HUF3] Round-trip tung byte + gioi han kich thuoc\n";
     const std::string src = "h2_src.tmp", bin = "h2.bin", dst = "h2_dst.tmp";
 
     for (const Case &c : allCases())
@@ -126,8 +126,8 @@ static void testRoundTripAndSizeBound()
         CHECK(packed.size() >= HEADER_SIZE, c.name + ": file nen ngan hon header");
         if (packed.size() >= HEADER_SIZE)
         {
-            CHECK(packed[0] == 'H' && packed[1] == 'U' && packed[2] == 'F' && packed[3] == '2',
-                  c.name + ": magic khong phai HUF2");
+            CHECK(packed[0] == 'H' && packed[1] == 'U' && packed[2] == 'F' && packed[3] == '3',
+                  c.name + ": magic khong phai HUF3");
             const std::uint8_t mode = packed[4];
             CHECK(mode == MODE_HUFFMAN || mode == MODE_STORED, c.name + ": mode khong hop le");
         }
@@ -142,7 +142,7 @@ static void testRoundTripAndSizeBound()
 
         std::cout << "  " << c.name << ": goc=" << c.content.size() << " nen=" << packed.size()
                   << " mode=" << (modeOf(packed) == MODE_STORED ? "STORED" : "HUFFMAN")
-                  << " ty le=" << ratio(packed.size(), c.content.size()) << "%\n";
+                  << " ty le=" << ratio(packed.size(), c.content.size()) << "\n";
     }
     std::remove(src.c_str());
     std::remove(bin.c_str());
@@ -160,7 +160,7 @@ static void flipDataBit(Bytes &packed)
 
 static void testCorruptionDetected()
 {
-    std::cout << "[HUF2] Phat hien hong (CRC32, magic, cat file, byte thua, mode)\n";
+    std::cout << "[HUF3] Phat hien hong (CRC32, magic, cat file, byte thua, mode)\n";
     const std::string src = "h2c_src.tmp", bin = "h2c.bin", dst = "h2c_dst.tmp";
 
     // Dùng dữ liệu đủ lớn để chắc chắn chọn HUFFMAN (có phần dữ liệu bit).
@@ -256,7 +256,7 @@ static void testCorruptionDetected()
 // (5) File HUF1 cũ, nhúng sẵn dạng mảng byte.
 static void testHuf1BackwardCompatibility()
 {
-    std::cout << "[HUF2] Tuong thich nguoc HUF1\n";
+    std::cout << "[HUF1] Tuong thich nguoc\n";
     const std::string bin = "huf1_old.bin", dst = "huf1_old.txt";
     // "aab" theo đặc tả HUF1 (xem docs/fileFormat.md mục 9): 33 byte.
     const Bytes huf1Aab = {
@@ -304,9 +304,59 @@ static void testHuf1BackwardCompatibility()
     std::remove(dst.c_str());
 }
 
+static void appendLittleEndian(Bytes& bytes, std::uint64_t value, int count)
+{
+    for (int i = 0; i < count; ++i)
+    {
+        bytes.push_back(static_cast<unsigned char>(value & 0xFFu));
+        value >>= 8;
+    }
+}
+
+static void testHuf2BackwardCompatibility()
+{
+    std::cout << "[HUF2] Tuong thich nguoc HUF2\n";
+    const std::string source = "aab";
+    Bytes archive = {'H', 'U', 'F', '2', MODE_HUFFMAN};
+    appendLittleEndian(archive, source.size(), 8);
+    appendLittleEndian(archive, crc32(source.data(), source.size()), 4);
+    appendLittleEndian(archive, 2, 2);
+    archive.push_back('a');
+    archive.push_back(2); // LEB128 frequency
+    archive.push_back('b');
+    archive.push_back(1);
+    archive.push_back(0xC0); // Huffman bits 110, then zero padding
+
+    const std::string bin = "huf2_legacy.bin";
+    const std::string dst = "huf2_legacy.txt";
+    writeBytes(bin, archive);
+    CHECK(Decompressor().decompress(bin, dst), "HUF2 'aab': giai nen that bai");
+    CHECK(bytesToString(readBytes(dst)) == source, "HUF2 'aab': du lieu sai");
+    std::remove(bin.c_str());
+    std::remove(dst.c_str());
+}
+
+static void testInvalidHuf3LengthTable()
+{
+    std::cout << "[HUF3] Tu choi bang do dai ma sai Kraft\n";
+    Bytes archive = {'H', 'U', 'F', '3', MODE_HUFFMAN};
+    appendLittleEndian(archive, 1, 8);
+    appendLittleEndian(archive, 0, 4);
+    appendLittleEndian(archive, 3, 2);
+    archive.insert(archive.end(), {'a', 1, 'b', 1, 'c', 1});
+
+    const std::string bin = "huf3_bad_kraft.bin";
+    const std::string dst = "huf3_bad_kraft.txt";
+    writeBytes(bin, archive);
+    CHECK(!Decompressor().decompress(bin, dst), "HUF3 bang Kraft oversubscribed duoc chap nhan");
+    CHECK(!fs::exists(dst), "HUF3 bang Kraft hong de lai file dich");
+    std::remove(bin.c_str());
+    std::remove(dst.c_str());
+}
+
 static void testSourceDestinationSafety()
 {
-    std::cout << "[HUF2] Bao ve file nguon va file nen\n";
+    std::cout << "[Codec] Bao ve file nguon va file nen\n";
     const std::string output = "safety_output.bin";
     const std::string collidingSource = output + ".tmp";
     const std::string reservedOutput = "safety_reserved.bin";
@@ -351,7 +401,7 @@ static void testSourceDestinationSafety()
 // (6) Fuzz: 500 lần đột biến ngẫu nhiên, không crash / không treo / không chấp nhận dữ liệu khác gốc.
 static void testFuzz()
 {
-    std::cout << "[HUF2] Fuzz 500 lan dot bien ngau nhien\n";
+    std::cout << "[HUF3] Fuzz 500 lan dot bien ngau nhien\n";
     const std::string src = "fz_src.tmp", bin = "fz.bin", dst = "fz_out.tmp";
 
     struct Seed
@@ -444,7 +494,7 @@ static void testFuzz()
 
 static void testCrc32()
 {
-    std::cout << "[HUF2] CRC32\n";
+    std::cout << "[CRC32]\n";
     CHECK(crc32("123456789", 9) == 0xCBF43926u, "CRC32(\"123456789\") sai");
     CHECK(crc32("", 0) == 0x00000000u, "CRC32(\"\") sai");
     CHECK(crc32("aab", 3) == 0x690E2297u, "CRC32(\"aab\") sai");
@@ -462,13 +512,15 @@ int main()
     testCrc32();
     testRoundTripAndSizeBound();
     testCorruptionDetected();
+    testInvalidHuf3LengthTable();
+    testHuf2BackwardCompatibility();
     testHuf1BackwardCompatibility();
     testSourceDestinationSafety();
     testFuzz();
 
     if (gFailures == 0)
     {
-        std::cout << "Tat ca test HUF2 da PASS\n";
+        std::cout << "Tat ca test HUF3/HUF2/HUF1 da PASS\n";
         return 0;
     }
     std::cerr << "Co " << gFailures << " loi\n";

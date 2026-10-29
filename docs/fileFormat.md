@@ -1,9 +1,9 @@
-# Định dạng file .bin (HUF2, có hỗ trợ đọc HUF1)
+# Định dạng file .bin (HUF3, có hỗ trợ đọc HUF2/HUF1)
 
 Tài liệu này là nguồn chuẩn cho người nén và người giải nén. Mọi thay đổi phải được cả nhóm thống nhất trước khi sửa.
 
-- **HUF2** là định dạng ghi hiện tại (mục 1 → 8).
-- **HUF1** là định dạng cũ, chỉ còn được **đọc** để tương thích ngược (mục 9).
+- **HUF3** là định dạng ghi hiện tại (mục 3.4).
+- **HUF2** và **HUF1** là định dạng cũ, chỉ còn được **đọc** để tương thích ngược.
 
 ## 1. Quy ước chung
 
@@ -85,6 +85,44 @@ không có bảng tần suất, không có bit đệm. Kích thước file STORE
    và xóa file đích dở dang. Kết hợp với các kiểm tra cấu trúc (mục 7), hầu như mọi hỏng ngầm đều
    bị phát hiện.
 
+### 3.4. Cấu trúc HUF3 (định dạng ghi hiện tại)
+
+HUF3 giữ nguyên header cố định 17 byte, mode và payload STORED của HUF2. Khác biệt chỉ ở mode
+HUFFMAN: thay bảng tần suất bằng bảng độ dài mã chuẩn tắc.
+
+| Phần | Kích thước | Kiểu | Ý nghĩa |
+|---|---|---|---|
+| magic | 4 byte | ASCII | `"HUF3"` |
+| mode | 1 byte | uint8 | `0` = HUFFMAN, `1` = STORED |
+| originalLength | 8 byte | uint64 | Số byte dữ liệu gốc |
+| crc32 | 4 byte | uint32 | CRC-32 IEEE của dữ liệu gốc |
+| uniqueCount | 2 byte | uint16 | (chỉ HUFFMAN) Số symbol có mã |
+| Bảng độ dài mã | `uniqueCount × 2` byte | | (chỉ HUFFMAN) cặp `symbol` (uint8), `codeLength` (uint8) |
+| Dữ liệu | phần còn lại | | HUFFMAN: mã chuẩn tắc MSB-first; STORED: byte gốc |
+
+Các cặp trong bảng được ghi theo `symbol` tăng dần. `codeLength` nằm trong `[1, 32]`; không có
+symbol nào được lặp. Bộ nén dùng Min-Heap và cây Huffman với khóa `(freq, minSymbol)` như trước,
+nhưng chỉ để tính độ dài mã; mã thực tế được gán canonical theo thứ tự `(codeLength, symbol)`.
+Mã đầu tiên của mỗi độ dài là mã kế tiếp sau mã trước đó, dịch trái theo chênh lệch độ dài.
+
+Bộ giải nén kiểm tra bất đẳng thức Kraft (tổng đơn vị mã không vượt `2^32`), giải đúng
+`originalLength` symbol, chỉ chấp nhận tối đa 7 bit đệm 0 cuối cùng và bắt buộc CRC32 khớp.
+Nếu độ dài cây vượt 32 bit hoặc HUFFMAN không nhỏ hơn STORED, bộ nén chọn STORED. Do đó giới hạn
+`kích thước nén <= kích thước gốc + 17` vẫn được giữ nguyên.
+
+Ví dụ HUF3 HUFFMAN hợp lệ cho dữ liệu rỗng (19 byte; bộ nén thực tế chọn STORED 17 byte):
+
+```
+48 55 46 33                          magic "HUF3"
+00                                   mode = HUFFMAN
+00 00 00 00 00 00 00 00              originalLength = 0
+00 00 00 00                          crc32 = 0
+00 00                                uniqueCount = 0
+```
+
+Với dữ liệu không rỗng, sau `uniqueCount` là đúng hai byte cho mỗi symbol (`symbol`, `codeLength`);
+không có tần suất trong HUF3 nên decoder không kiểm tra tổng tần suất.
+
 ## 4. Xây dựng cây Huffman (quy tắc bắt buộc, không đổi so với HUF1)
 
 Người nén và người giải nén phải dựng ra **cùng một cây**, nên cần quy tắc xác định hoàn toàn.
@@ -103,9 +141,12 @@ So sánh khóa theo thứ tự từ điển: so `weight` trước, nếu bằng 
 
 Min-Heap tự viết (`include/minHeap.h`) thực hiện đúng quy tắc này.
 
-**Gán mã:**
+**Gán mã cho HUF1/HUF2:**
 - Đi từ gốc xuống lá. Cạnh trái ghi bit `0`, cạnh phải ghi bit `1`.
 - Mã của symbol là chuỗi bit trên đường đi từ gốc đến lá đó.
+
+HUF3 dùng cùng cây để lấy độ dài, sau đó gán mã canonical; thứ tự symbol trên dây không đổi
+(tăng dần), còn thứ tự gán mã là `(độ dài, giá trị symbol)`.
 
 ## 5. CRC-32 (IEEE 802.3)
 
@@ -156,9 +197,9 @@ C0                                   dữ liệu bit: 110 + đệm 00000
 Bộ giải nén phải từ chối (báo lỗi, xóa file đích dở dang) nếu gặp một trong các trường hợp sau.
 Các kiểm tra của HUF1 được giữ nguyên và áp dụng tương đương cho HUF2.
 
-**Header chung:**
+**Header HUF1/HUF2:**
 - File ngắn hơn `HEADER_SIZE` (17 byte).
-- Magic khác `"HUF2"` và khác `"HUF1"`. (Magic `"HUF1"` chuyển sang nhánh đọc HUF1, mục 9.)
+- Magic không phải `"HUF1"`, `"HUF2"` hoặc `"HUF3"`.
 - `mode` khác `0` và `1`.
 
 **Mode STORED:**
@@ -178,6 +219,12 @@ Các kiểm tra của HUF1 được giữ nguyên và áp dụng tương đươn
 - Hết dữ liệu bit trước khi giải đủ `originalLength` symbol (gặp lá ảo / hết byte).
 - **CRC32 của dữ liệu giải mã khác `crc32` trong header.**
 
+**Mode HUF3-HUFFMAN:**
+- `uniqueCount > 256`, số cặp khai báo bị thiếu, symbol trùng/lệch thứ tự, hoặc độ dài ngoài `[1, 32]`.
+- Các độ dài mã vi phạm bất đẳng thức Kraft (mã bị chồng lấn).
+- Không giải được đủ `originalLength` symbol, có mã bit không tồn tại, có hơn 7 bit đệm hoặc bit đệm khác 0.
+- CRC32 của dữ liệu giải mã không khớp.
+
 **Kiểm tra kích thước phần dữ liệu bit ngay từ đầu:** sau khi dựng cây, bộ giải nén tính
 `số bit cần thiết = Σ (độ dài mã của symbol × freq của symbol)` (với cây 1 ký tự: `originalLength` bit)
 và so sánh với `8 × (kích thước file − kích thước header − kích thước bảng tần suất)`.
@@ -187,12 +234,10 @@ Với cây 1 ký tự hoặc 2 ký tự cần đủ byte cho mọi bit: `ceil(re
 **Ghi file đích:** dữ liệu giải mã được ghi theo khối 64 KB và CRC tính đồng thời trên chính dữ liệu
 ghi ra. Chỉ đổi tên file tạm thành file đích khi CRC khớp; mọi lỗi giữa chừng đều xóa file tạm.
 
-## 8. Giới hạn và hướng cải tiến
+## 8. Giới hạn
 
 - Không xử lý theo khối ở tầng nén (dữ liệu được đọc 2 lượt), nhưng bộ nhớ dùng cố định 64 KB.
-- Tần suất lưu 1 lần (không lưu 2 lần cho canonical), nên với file rất lớn có nhiều symbol hiếm,
-  bảng vẫn là `O(uniqueCount)` byte.
-- Hướng cải tiến: Canonical Huffman (chỉ lưu độ dài mã) hoặc nén bảng bằng RLE.
+- Bảng HUF3 dùng đúng 2 byte/symbol, nên kích thước metadata HUFFMAN là `O(uniqueCount)`.
 
 ## 9. HUF1 (định dạng cũ — chỉ đọc để tương thích ngược)
 
@@ -206,7 +251,7 @@ Bộ nén **không ghi** HUF1 nữa; bộ giải nén vẫn đọc được đ�
 | Bảng tần suất | `uniqueCount × 9` byte | | `symbol` (uint8) + `freq` (uint64 LE) |
 | Dữ liệu bit | Phần còn lại | | Chuỗi mã Huffman nối liền, đệm 0 |
 
-Quy tắc dựng cây, gán mã, MSB-first, các kiểm tra cấu trúc **giống hệt HUF2/HUFFMAN** (mục 4, 7),
+Quy tắc dựng cây, gán mã, MSB-first, các kiểm tra cấu trúc giống HUF2/HUFFMAN (mục 4, 7),
 trừ: không có `mode`, không có CRC32, `freq` là 8 byte cố định.
 
 Ví dụ `"aab"` dạng HUF1 (33 byte):
@@ -232,3 +277,4 @@ ngay khi giải nén (kể cả khi dùng công cụ khác), SHA-256 xác nhận
 |---|---|
 | HUF1 | Bản đầu: header 14 byte, bảng tần suất 9 byte/symbol, không checksum, không có mode STORED. |
 | HUF2 | Thêm `mode` (HUFFMAN/STORED), `crc32`, `freq` dùng LEB128, `HEADER_SIZE` = 17 byte. Bộ giải nén đọc được cả HUF1. |
+| HUF3 | Thay bảng tần suất HUFFMAN bằng độ dài mã canonical (2 byte/symbol); giữ header, CRC32 và STORED của HUF2. Decoder vẫn đọc HUF1/HUF2. |

@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "messages.h"
+
 // Một mục trong menu: mã phím, nhãn hiển thị, mô tả ngắn.
 struct MenuItem
 {
@@ -26,7 +28,7 @@ struct MenuHeader
 class ConsoleUI
 {
 public:
-    ConsoleUI(std::istream &input, std::ostream &output);
+    ConsoleUI(std::istream &input, std::ostream &output, bool ascii = false);
 
     // --- Hiển thị ---
     void showHeader(const MenuHeader &header) const;
@@ -45,12 +47,12 @@ public:
     // Đọc dòng cho tới khi có nội dung khác rỗng.
     std::string readNonEmptyLine(const std::string &prompt) const;
     // Đọc lựa chọn của người dùng; trả về std::nullopt khi hết dữ liệu vào (EOF).
-    std::optional<std::string> readChoice(const std::string &prompt = "Chon: ") const;
+    std::optional<std::string> readChoice(const std::string &prompt = "") const;
     // Hỏi có/không; mặc định khi chỉ bấm Enter.
     bool confirm(const std::string &question, bool defaultValue) const;
 
     // Tạm dừng để người dùng đọc kết quả trước khi menu vẽ lại.
-    void waitForEnter(const std::string &prompt = "\nNhan Enter de quay lai menu...") const;
+    void waitForEnter(const std::string &prompt = "") const;
 
     // --- Tiện ích ---
     // Kẻ bảng hai cột có căn lề phải cho cột số liệu.
@@ -58,6 +60,10 @@ public:
                    const std::vector<std::vector<std::string>> &rows) const;
 
     static std::string formatBytes(std::uintmax_t bytes);
+    static bool standardOutputIsTerminal();
+    void showProgress(unsigned int percent) const;
+    bool ascii() const { return ascii_; }
+    const char *text(MessageId id) const { return message(id, ascii_); }
 
     std::istream &in() const { return input_; }
     std::ostream &out() const { return output_; }
@@ -65,4 +71,5 @@ public:
 private:
     std::istream &input_;
     std::ostream &output_;
+    bool ascii_;
 };

@@ -1,6 +1,7 @@
 ﻿// Test cho menu console: ConsoleUI (định dạng, đọc input) và MenuController (luồng chọn chức năng).
 #undef NDEBUG
 #include <cassert>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -12,6 +13,8 @@
 #include "consoleUI.h"
 #include "decompressor.h"
 #include "menuController.h"
+#include "fileFormat.h"
+#include "crc32.h"
 
 namespace fs = std::filesystem;
 
@@ -35,6 +38,54 @@ void writeFile(const std::string& path, const std::string& content) {
 void removeIfExists(const std::string& path) {
     std::error_code ec;
     fs::remove(path, ec);
+}
+
+std::size_t utf8Width(const std::string& text) {
+    std::size_t width = 0;
+    for (unsigned char byte : text) {
+        if ((byte & 0xC0) != 0x80) ++width;
+    }
+    return width;
+}
+
+void writeLittleEndian(std::ostream& out, std::uint64_t value, int bytes) {
+    for (int i = 0; i < bytes; ++i) {
+        out.put(static_cast<char>(value & 0xFF));
+        value >>= 8;
+    }
+}
+
+void writeHuf1Sample(const std::string& path) {
+    std::ofstream out(path, std::ios::binary);
+    out.write("HUF1", 4);
+    writeLittleEndian(out, 1, 2);
+    writeLittleEndian(out, 2, 8);
+    out.put('A');
+    writeLittleEndian(out, 2, 8);
+    out.put('\0');
+}
+
+void writeHuf2HuffmanSample(const std::string& path) {
+    std::ofstream out(path, std::ios::binary);
+    out.write("HUF2", 4);
+    out.put(static_cast<char>(MODE_HUFFMAN));
+    writeLittleEndian(out, 3, 8);
+    writeLittleEndian(out, crc32("aab", 3), 4);
+    writeLittleEndian(out, 2, 2);
+    out.put('a');
+    out.put(2);
+    out.put('b');
+    out.put(1);
+    out.put(static_cast<char>(0xC0));
+}
+
+void writeHuf2StoredSample(const std::string& path) {
+    std::ofstream out(path, std::ios::binary);
+    out.write("HUF2", 4);
+    out.put(static_cast<char>(MODE_STORED));
+    writeLittleEndian(out, 3, 8);
+    writeLittleEndian(out, crc32("abc", 3), 4);
+    out.write("abc", 3);
 }
 
 // ---------------------------------------------------------------- ConsoleUI
@@ -89,7 +140,7 @@ void testReadNonEmptyLineRetries() {
     ConsoleUI ui(in, out);
 
     CHECK(ui.readNonEmptyLine("nhap: ") == "final");
-    CHECK(out.str().find("khong duoc de trong") != std::string::npos);
+    CHECK(out.str().find("không được để trống") != std::string::npos);
 }
 
 void testFormatBytes() {
@@ -139,7 +190,7 @@ void testMessageTags() {
 
     const std::string text = out.str();
     CHECK(text.find("[OK] xong") != std::string::npos);
-    CHECK(text.find("[LOI] hong") != std::string::npos);
+    CHECK(text.find("[LỖI] hong") != std::string::npos);
     CHECK(text.find("[!] canh bao") != std::string::npos);
     CHECK(text.find("[i] ghi chu") != std::string::npos);
 }
@@ -155,7 +206,7 @@ void testMenuExitImmediately() {
     MenuController menu(ui, compressor, decompressor);
 
     CHECK(menu.run() == 0);
-    CHECK(out.str().find("Tam biet") != std::string::npos);
+    CHECK(out.str().find("Tạm biệt") != std::string::npos);
 }
 
 void testMenuHandlesInvalidChoice() {
@@ -167,7 +218,7 @@ void testMenuHandlesInvalidChoice() {
     MenuController menu(ui, compressor, decompressor);
 
     CHECK(menu.run() == 0);
-    CHECK(out.str().find("khong hop le") != std::string::npos);
+    CHECK(out.str().find("không hợp lệ") != std::string::npos);
 }
 
 void testMenuCompressAndDecompressFlow() {
@@ -190,7 +241,7 @@ void testMenuCompressAndDecompressFlow() {
 
         CHECK(menu.run() == 0);
         CHECK(fs::exists(bin));
-        CHECK(out.str().find("Ty le nen") != std::string::npos);
+        CHECK(out.str().find("Tỷ lệ nén") != std::string::npos);
     }
 
     {
@@ -231,7 +282,7 @@ void testMenuVerifyFlow() {
 
     CHECK(menu.run() == 0);
     CHECK(out.str().find("SHA-256") != std::string::npos);
-    CHECK(out.str().find("giong file goc 100%") != std::string::npos);
+    CHECK(out.str().find("giống tệp gốc 100%") != std::string::npos);
     CHECK(!fs::exists(bin + ".verify_tmp"));
 
     removeIfExists(src);
@@ -247,7 +298,7 @@ void testMenuRejectsMissingFile() {
     MenuController menu(ui, compressor, decompressor);
 
     CHECK(menu.run() == 0);
-    CHECK(out.str().find("Khong tim thay file") != std::string::npos);
+    CHECK(out.str().find("Không tìm thấy tệp") != std::string::npos);
 }
 
 void testMenuFileInfoFlow() {
@@ -263,10 +314,137 @@ void testMenuFileInfoFlow() {
     MenuController menu(ui, compressor, decompressor);
 
     CHECK(menu.run() == 0);
-    CHECK(out.str().find("THONG TIN FILE") != std::string::npos);
-    CHECK(out.str().find("Khong phai HUF2/HUF1") != std::string::npos);
+    CHECK(out.str().find("THÔNG TIN TỆP") != std::string::npos);
+    CHECK(out.str().find("Tệp thường") != std::string::npos);
 
     removeIfExists(src);
+}
+
+void testFileInfoFormatsAndMissingFile() {
+    const std::string huffmanInput = "menu_info_huffman_src.txt";
+    const std::string huffmanArchive = "menu_info_huffman.huf";
+    const std::string storedInput = "menu_info_stored_src.txt";
+    const std::string storedArchive = "menu_info_stored.huf";
+    const std::string huf2Huffman = "menu_info_huf2_huffman.huf";
+    const std::string huf2Stored = "menu_info_huf2_stored.huf";
+    const std::string huf1 = "menu_info_legacy.huf";
+    const std::string plain = "menu_info_plain.txt";
+    const std::string missing = "menu_info_missing_12345";
+    for (const std::string& path : {huffmanInput, huffmanArchive, storedInput,
+                                    storedArchive, huf2Huffman, huf2Stored, huf1, plain, missing})
+        removeIfExists(path);
+    writeFile(huffmanInput, std::string(2000, 'A'));
+    writeFile(storedInput, "abc");
+    writeHuf2HuffmanSample(huf2Huffman);
+    writeHuf2StoredSample(huf2Stored);
+    writeHuf1Sample(huf1);
+    writeFile(plain, "plain file");
+
+    Compressor compressor;
+    CHECK(compressor.compress(huffmanInput, huffmanArchive));
+    CHECK(compressor.compress(storedInput, storedArchive));
+
+    auto infoFor = [](const std::string& path, bool& result) {
+        std::istringstream in;
+        std::ostringstream out;
+        ConsoleUI ui(in, out);
+        Compressor c;
+        Decompressor d;
+        MenuController menu(ui, c, d);
+        result = menu.showFileInfo(path);
+        return out.str();
+    };
+    bool result = false;
+    const std::string huffmanInfo = infoFor(huffmanArchive, result);
+    CHECK(result);
+    CHECK(huffmanInfo.find("HUF3-HUFFMAN") != std::string::npos);
+    CHECK(huffmanInfo.find("Kích thước gốc") != std::string::npos);
+    CHECK(huffmanInfo.find("Số ký hiệu khác nhau") != std::string::npos);
+    CHECK(huffmanInfo.find("SHA-256") != std::string::npos);
+
+    const std::string storedInfo = infoFor(storedArchive, result);
+    CHECK(result);
+    CHECK(storedInfo.find("HUF3-STORED") != std::string::npos);
+    CHECK(storedInfo.find("Tỷ lệ nén") != std::string::npos);
+
+    const std::string huf2HuffmanInfo = infoFor(huf2Huffman, result);
+    CHECK(result);
+    CHECK(huf2HuffmanInfo.find("HUF2-HUFFMAN") != std::string::npos);
+
+    const std::string huf2StoredInfo = infoFor(huf2Stored, result);
+    CHECK(result);
+    CHECK(huf2StoredInfo.find("HUF2-STORED") != std::string::npos);
+
+    const std::string huf1Info = infoFor(huf1, result);
+    CHECK(result);
+    CHECK(huf1Info.find("HUF1") != std::string::npos);
+    CHECK(huf1Info.find("Số ký hiệu khác nhau") != std::string::npos);
+
+    const std::string plainInfo = infoFor(plain, result);
+    CHECK(result);
+    CHECK(plainInfo.find("Tệp thường") != std::string::npos);
+    CHECK(plainInfo.find("Kích thước gốc") != std::string::npos);
+    CHECK(plainInfo.find("Không áp dụng") != std::string::npos);
+
+    const std::string missingInfo = infoFor(missing, result);
+    CHECK(!result);
+    CHECK(missingInfo.find("Không đọc được tệp") != std::string::npos);
+
+    for (const std::string& path : {huffmanInput, huffmanArchive, storedInput,
+                                    storedArchive, huf2Huffman, huf2Stored, huf1, plain})
+        removeIfExists(path);
+}
+
+void testUtf8AsciiAndTableAlignment() {
+    std::istringstream utf8Input;
+    std::ostringstream utf8Output;
+    ConsoleUI utf8Ui(utf8Input, utf8Output);
+    utf8Ui.showMenu({{"1", utf8Ui.text(MessageId::MenuCompress),
+                      utf8Ui.text(MessageId::MenuCompressDescription)}});
+    CHECK(utf8Output.str().find("Nén tệp") != std::string::npos);
+
+    std::istringstream asciiInput;
+    std::ostringstream asciiOutput;
+    ConsoleUI asciiUi(asciiInput, asciiOutput, true);
+    asciiUi.showMenu({{"1", asciiUi.text(MessageId::MenuCompress),
+                       asciiUi.text(MessageId::MenuCompressDescription)}});
+    CHECK(asciiOutput.str().find("Nen tep") != std::string::npos);
+    CHECK(asciiOutput.str().find("Nén") == std::string::npos);
+
+    std::ostringstream tableOutput;
+    ConsoleUI tableUi(utf8Input, tableOutput);
+    tableUi.showTable({"Tên", "Mô tả"}, {{"Nén", "tốt"}, {"Giải nén", "khôi phục"}});
+    std::istringstream lines(tableOutput.str());
+    std::string line;
+    std::size_t expectedWidth = 0;
+    while (std::getline(lines, line)) {
+        if (expectedWidth == 0) expectedWidth = utf8Width(line);
+        CHECK(utf8Width(line) == expectedWidth);
+    }
+}
+
+void testProgressDoesNotWriteToInjectedOutput() {
+    std::istringstream input;
+    std::ostringstream output;
+    ConsoleUI ui(input, output);
+    ui.showProgress(50);
+    CHECK(output.str().empty());
+}
+
+void testCodecErrorsDoNotWriteToStderr() {
+    const std::string missing = "codec_missing_12345";
+    const std::string output = "codec_missing_output";
+    removeIfExists(output);
+    Compressor compressor;
+    Decompressor decompressor;
+    std::ostringstream captured;
+    std::streambuf* previous = std::cerr.rdbuf(captured.rdbuf());
+    CHECK(!compressor.compress(missing, output));
+    CHECK(!decompressor.decompress(missing, output));
+    std::cerr.rdbuf(previous);
+    CHECK(captured.str().empty());
+    CHECK(compressor.lastError() != MessageId::None);
+    CHECK(decompressor.lastError() != MessageId::None);
 }
 
 void testCompressAndVerifyDetectsCleanFile() {
@@ -308,6 +486,10 @@ int main() {
     testMenuVerifyFlow();
     testMenuRejectsMissingFile();
     testMenuFileInfoFlow();
+    testFileInfoFormatsAndMissingFile();
+    testUtf8AsciiAndTableAlignment();
+    testProgressDoesNotWriteToInjectedOutput();
+    testCodecErrorsDoNotWriteToStderr();
     testCompressAndVerifyDetectsCleanFile();
 
     if (failures == 0)

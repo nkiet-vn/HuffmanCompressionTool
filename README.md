@@ -18,7 +18,8 @@ HuffmanCompressionTool/
 │   ├── bitWriter.h             # Ghi bit ra stream
 │   ├── bitReader.h             # Đọc bit từ stream (có hỗ trợ offset)
 │   ├── crc32.h                 # CRC-32 IEEE 802.3 (bảng tra 256 phần tử)
-│   ├── fileFormat.h            # Hằng số HUF2 + LEB128 + little-endian dùng chung
+│   ├── fileFormat.h            # Hằng số HUF1/HUF2/HUF3 + LEB128 + little-endian
+│   ├── canonicalHuffman.h      # Tính độ dài cây và gán mã canonical cho HUF3
 │   ├── huffmanTree.h           # Cây Huffman, HuffmanNode (kiểu nút duy nhất) và bảng mã
 │   ├── minHeap.h               # Min-Heap tự viết, chứa HuffmanNode (khóa: freq, minSymbol)
 │   ├── compressor.h            # Class nén
@@ -27,7 +28,8 @@ HuffmanCompressionTool/
 │   ├── compressionVerifier.h   # Xác minh round-trip
 │   ├── fileHasher.h            # Tính hash SHA-256 của file
 │   ├── sha256.h                # Thuật toán SHA-256
-│   ├── iCodec.h                # Interface nén/giải nén
+│   ├── messages.h              # Chuỗi hiển thị tiếng Việt UTF-8 / ASCII
+│   ├── iCodec.h                # Interface đa hình nén/giải nén
 │   ├── consoleUI.h             # Tầng hiển thị CLI (banner, menu, bảng, prompt)
 │   ├── menuController.h        # Tầng điều phối menu (không đụng cin/cout)
 │   └── pathUtil.h              # chuyển đường dẫn UTF-8 sang kiểu hệ điều hành (toPath())
@@ -56,7 +58,8 @@ HuffmanCompressionTool/
     ├── test_compress.cpp
     ├── test_huffmancore.cpp
     ├── testT10.cpp
-    ├── test_huf2.cpp           # HUF2: round-trip, giới hạn kích thước, CRC, HUF1 cũ, fuzz
+    ├── test_huf2.cpp           # HUF3 round-trip/fuzz, tương thích HUF2/HUF1
+    ├── test_canonicalHuffman.cpp # Kraft và giới hạn độ dài mã canonical
     ├── test_output_guard.cpp   # Xóa file đích dở dang khi CRC sai / file bị cắt
     └── verify_samples.cpp
 ```
@@ -75,7 +78,7 @@ main.cpp          -> chỉ phân tích tham số dòng lệnh, chọn chế đ�
 - `ConsoleUI` là **tầng trình bày thuần** (không biết gì về nén): nhận `istream&`/`ostream&`
   qua constructor nên test được bằng `std::istringstream`/`std::ostringstream`.
 - `MenuController` là **tầng điều khiển**: chỉ gọi `ui_` và các service, không dùng `cin`/`cout` trực tiếp.
-- CLI (`-c`, `-d`, `-v`) và menu tương tác dùng **chung** `MenuController`, nên thông báo/kết quả
+- CLI (`-c`, `-d`, `-v`, `-i`) và menu tương tác dùng **chung** `MenuController`, nên thông báo/kết quả
   giống hệt nhau ở cả hai đường vào.
 
 ## Cách build
@@ -89,6 +92,8 @@ cmake --build build
 ```
 
 File chạy được tạo trong `build/` (Windows: `build/Release/`).
+Mặc định CMake cũng build test; dùng `-DHUFFMAN_BUILD_TESTS=OFF` để chỉ build ứng dụng.
+Sau khi build, `cmake --install build --prefix <thư_mục_cài_đặt>` cài executable vào `bin/`.
 
 Chạy toàn bộ test:
 
@@ -108,17 +113,17 @@ huffman --menu     # hoặc -m
 ```
 ==============================================================
   Huffman Compression Tool  v1.0.0
-  Cong cu nen va giai nen file bang thuat toan Huffman
+  Công cụ nén và giải nén tệp bằng thuật toán Huffman
 ==============================================================
-   [1] Nen file                                nen file bat ky thanh dinh dang HUF2
-   [2] Giai nen file                           khoi phuc file tu .bin
-   [3] Nen va xac minh SHA-256                 nen + giai nen lai + so sanh hash
-   [4] Xem thong tin file                      kich thuoc, dinh dang HUF2
-   [5] Huong dan / tro giup                    cach dung dong lenh
-   [6] Thong tin phan mem                      phien ban, cau truc du lieu chinh
-   [0] Thoat
+   [1] Nén tệp                                 nén tệp thành định dạng HUF3
+   [2] Giải nén tệp                            khôi phục tệp từ .bin
+   [3] Nén và xác minh SHA-256                 nén + giải nén lại + so sánh hash
+   [4] Xem thông tin tệp                       kích thước, định dạng, tỷ lệ, SHA-256
+   [5] Hướng dẫn / trợ giúp                    cách dùng dòng lệnh
+   [6] Thông tin phần mềm                      phiên bản, cấu trúc dữ liệu chính
+   [0] Thoát
 --------------------------------------------------------------
-Chon chuc nang [0-6]:
+Chọn chức năng [0-6]:
 ```
 
 Đặc điểm của menu:
@@ -127,7 +132,10 @@ Chon chuc nang [0-6]:
 - Nhập đường dẫn file nguồn không tồn tại → báo lỗi và quay lại menu.
 - File đích đã tồn tại → hỏi xác nhận ghi đè (`[y/N]`).
 - Kết quả in dạng bảng có căn lề: kích thước (B/KB/MB), tỷ lệ nén, SHA-256.
-- Mục `[4]` nhận diện file HUF2, HUF1 cũ hay file thường; mục `[5]`/`[6]` in hướng dẫn và thông tin phần mềm.
+- Mục `[4]` nhận diện HUF3-HUFFMAN/STORED, HUF2, HUF1 hay tệp thường, đồng thời hiển thị
+  kích thước gốc, số ký hiệu (nếu có), tỷ lệ nén và SHA-256; mục `[5]`/`[6]` in hướng dẫn và thông tin phần mềm.
+- Giao diện mặc định hiển thị tiếng Việt UTF-8; dùng `--ascii` hoặc `HUFFMAN_ASCII=1` để hiển thị
+  bản không dấu trên console không hỗ trợ UTF-8.
 
 ### Dòng lệnh
 
@@ -141,13 +149,22 @@ huffman -d <file_nen.bin> <file_dich>
 # Nén + xác minh khôi phục 100% bằng SHA-256
 huffman -v <file_nguon> <file_nen.bin>
 
+# Xem thông tin và SHA-256 của tệp
+huffman -i <file>
+
 # Trợ giúp
 huffman --help
+
+# Dùng giao diện không dấu
+huffman --ascii -i <file>
 ```
 
 Sau khi nén, chương trình in kích thước gốc, kích thước nén và tỷ lệ nén (%).
 Chế độ `-v` giải nén ra file tạm và so sánh SHA-256 với file gốc.
 Tham số sai (chế độ không hợp lệ, thiếu đối số) luôn báo lỗi và trả exit code 1.
+`-i` dùng chung logic hiển thị với mục `[4]`; tệp không tồn tại/lỗi đọc trả exit code 1.
+Tác vụ với tệp lớn hơn 10 MiB hiển thị tiến trình phần trăm khi stdout là terminal; khi chuyển
+hướng stdout, tiến trình bị tắt để không làm nhiễu pipe và CI.
 
 ## Tính năng
 
@@ -179,16 +196,16 @@ Tóm tắt:
 
 | Phần | Kích thước |
 |---|---|
-| magic `"HUF2"` | 4 byte |
+| magic `"HUF3"` | 4 byte |
 | mode (0 = HUFFMAN, 1 = STORED) | 1 byte |
 | originalLength | 8 byte (uint64 LE) |
 | crc32 của dữ liệu gốc | 4 byte |
 | *(chỉ HUFFMAN)* uniqueCount | 2 byte |
-| *(chỉ HUFFMAN)* bảng tần suất (symbol + freq LEB128) | ~2–3 byte/symbol |
+| *(chỉ HUFFMAN)* bảng độ dài mã canonical (symbol + codeLength) | 2 byte/symbol |
 | Dữ liệu | HUFFMAN: bit MSB-first + đệm 0; STORED: byte gốc |
 
-Header cố định 17 byte. Từ HUF1 cũ: header 14 byte, bảng 9 byte/symbol, không checksum, không có
-mode STORED — vẫn đọc được nhưng không ghi nữa.
+Header cố định 17 byte. HUF3 vẫn ghi được cả mode HUFFMAN và STORED. HUF2 (bảng tần suất LEB128)
+và HUF1 (bảng tần suất 8 byte, không checksum) vẫn đọc được để tương thích ngược.
 
 ## Kiểm thử
 
@@ -200,9 +217,11 @@ mode STORED — vẫn đọc được nhưng không ghi nữa.
 | `bitWriter` | Ghi bit MSB-first |
 | `huffmanCore` | Thứ tự heap, tie-break, prefix-free, cây 1 ký tự |
 | `roundtrip` | Nén rồi giải nén, so sánh từng byte; từ chối header hỏng HUF1/HUF2 |
-| `compress` | Khớp đặc tả HUF2 (ví dụ `"aab"`), bố cục HUFFMAN, file rỗng, file nhỏ không phình |
-| `huf2` | Round-trip 7 loại file, giới hạn `nén <= gốc + 17`, lỗi CRC khi sửa bit, header hỏng, HUF1 cũ, bảo vệ file nguồn/đích, fuzz 500 lần |
-| `menu` | ConsoleUI (trim, EOF, bảng, tag thông báo) + luồng menu nén/giải nén/xác minh/thông tin |
+| `compress` | Khớp HUF3 (ví dụ `"aab"`), bảng canonical, file rỗng, file nhỏ không phình |
+| `huf2` | HUF3 round-trip, giới hạn `nén <= gốc + 17`, CRC, bảng hỏng, tương thích HUF2/HUF1, fuzz 500 lần |
+| `canonicalHuffman` | Gán mã theo canonical, Kraft, mã dài tối đa 32 bit |
+| `menu` | ConsoleUI (trim, EOF, bảng UTF-8/ASCII, căn cột code point) + thông tin HUF3/HUF2/HUF1/plain, codec không ghi stderr |
+| `cli_info`, `cli_ascii_info`, `cli_info_missing`, `cli_info_bad_args` | CLI `-i`, chế độ `--ascii`, tệp không tồn tại và tham số thiếu |
 | `testT10` | SHA-256, thống kê, xác minh |
 | `verify_samples` | Kiểm thử tổng hợp với file mẫu |
 | `output_guard` | CRC sai và dữ liệu Huffman bị cắt không để lại file đích hoặc file tạm |
@@ -211,6 +230,10 @@ Các test dùng `assert` đều có `#undef NDEBUG` nên vẫn kiểm tra thật
 Test chạy trong thư mục build nên không để lại rác ở thư mục gốc.
 
 Xem kết quả kiểm thử chi tiết trong [docs/ketQuaKiemThu.md](docs/ketQuaKiemThu.md).
+
+Các interface `ICompressor` và `IDecompressor` được dùng đa hình bởi `CompressionVerifier`.
+`testT10` truyền `IdentityCodec` giả qua các interface, xác nhận verifier gọi đúng thao tác nén
+và giải nén; do đó các interface được giữ lại.
 
 ## Quy trình Git
 

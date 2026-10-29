@@ -47,10 +47,15 @@ static std::string sha256OfString(const std::string& text) {
 
 class IdentityCodec : public ICompressor, public IDecompressor {
 public:
+    int compressCalls = 0;
+    int decompressCalls = 0;
+
     bool compress(const std::string& inputPath, const std::string& outputPath) override {
+        ++compressCalls;
         return copyFile(inputPath, outputPath);
     }
     bool decompress(const std::string& inputPath, const std::string& outputPath) override {
+        ++decompressCalls;
         return copyFile(inputPath, outputPath);
     }
 
@@ -159,6 +164,8 @@ static void testVerifierSuccess() {
 
     CHECK(result.isPassed());
     CHECK(result.compressOk && result.decompressOk && result.hashMatch);
+    CHECK(codec.compressCalls == 1);
+    CHECK(codec.decompressCalls == 1);
     CHECK(result.info.has_value());
     CHECK(result.info->originalSize == result.info->compressedSize);
     CHECK(log.str().find("Ty le nen") != std::string::npos);

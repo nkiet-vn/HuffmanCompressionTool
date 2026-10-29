@@ -1,4 +1,5 @@
-﻿#include <iostream>
+#include <cstdlib>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -14,43 +15,51 @@
 #include "consoleUI.h"
 #include "decompressor.h"
 #include "menuController.h"
+#include "messages.h"
 
-namespace {
+namespace
+{
 
-void printHelp() {
-    std::cout << "Huffman Compression Tool - Cong cu nen du lieu Huffman (C++17)\n\n";
-    std::cout << "Su dung:\n";
-    std::cout << "  huffman -c <file_nguon> <file_nen.bin>   Nen file\n";
-    std::cout << "  huffman -d <file_nen.bin> <file_dich>    Giai nen file\n";
-    std::cout << "  huffman -v <file_nguon> <file_nen.bin>   Nen va xac minh khoi phuc SHA-256\n";
-    std::cout << "  huffman -m, --menu                       Mo menu tuong tac\n";
-    std::cout << "  huffman --help                           Hien thi huong dan nay\n\n";
-    std::cout << "Chay khong tham so cung se mo menu tuong tac.\n\n";
-    std::cout << "Vi du:\n";
-    std::cout << "  huffman -c input.txt output.bin\n";
-    std::cout << "  huffman -d output.bin restored.txt\n";
-    std::cout << "  huffman -v input.txt output.bin\n";
+void printHelp(bool ascii)
+{
+    std::cout << message(MessageId::CliTitle, ascii) << "\n\n";
+    std::cout << message(MessageId::Usage, ascii) << "\n";
+    std::cout << message(MessageId::CliCompress, ascii) << "\n";
+    std::cout << message(MessageId::CliDecompress, ascii) << "\n";
+    std::cout << message(MessageId::CliVerify, ascii) << "\n";
+    std::cout << message(MessageId::CliInfo, ascii) << "\n";
+    std::cout << message(MessageId::CliMenu, ascii) << "\n";
+    std::cout << message(MessageId::CliHelp, ascii) << "\n";
+    std::cout << message(MessageId::CliAscii, ascii) << "\n\n";
+    std::cout << message(MessageId::CliNoArgs, ascii) << "\n\n";
+    std::cout << message(MessageId::CliExamples, ascii) << "\n";
+    std::cout << message(MessageId::CliExampleCompress, ascii) << "\n";
+    std::cout << message(MessageId::CliExampleDecompress, ascii) << "\n";
+    std::cout << message(MessageId::CliExampleInfo, ascii) << "\n";
+    std::cout << message(MessageId::CliExampleVerify, ascii) << "\n";
 }
 
-// Trả về tham số dòng lệnh dạng UTF-8.
-// Windows: đặt console sang UTF-8 (nhập/xuất chữ có dấu) và lấy tham số từ GetCommandLineW,
-// vì argv của Windows đi qua bảng mã ANSI nên chữ có dấu (vd "mẫu.txt") bị biến thành '?'.
-std::vector<std::string> utf8Arguments(int argc, char* argv[]) {
+std::vector<std::string> utf8Arguments(int argc, char *argv[])
+{
     std::vector<std::string> args(argv, argv + argc);
 #ifdef _WIN32
     SetConsoleCP(CP_UTF8);
     SetConsoleOutputCP(CP_UTF8);
     int wideCount = 0;
-    LPWSTR* wideArgs = CommandLineToArgvW(GetCommandLineW(), &wideCount);
-    if (wideArgs) {
-        if (wideCount == argc) {
-            for (int i = 0; i < argc; ++i) {
+    LPWSTR *wideArgs = CommandLineToArgvW(GetCommandLineW(), &wideCount);
+    if (wideArgs)
+    {
+        if (wideCount == argc)
+        {
+            for (int i = 0; i < argc; ++i)
+            {
                 const int bytes = WideCharToMultiByte(CP_UTF8, 0, wideArgs[i], -1, nullptr, 0, nullptr, nullptr);
-                if (bytes <= 1) continue;
-                std::string utf8(static_cast<size_t>(bytes), '\0');
+                if (bytes <= 1)
+                    continue;
+                std::string utf8(static_cast<std::size_t>(bytes), '\0');
                 WideCharToMultiByte(CP_UTF8, 0, wideArgs[i], -1, &utf8[0], bytes, nullptr, nullptr);
-                utf8.resize(static_cast<size_t>(bytes - 1));
-                args[static_cast<size_t>(i)] = utf8;
+                utf8.resize(static_cast<std::size_t>(bytes - 1));
+                args[static_cast<std::size_t>(i)] = utf8;
             }
         }
         LocalFree(wideArgs);
@@ -59,55 +68,83 @@ std::vector<std::string> utf8Arguments(int argc, char* argv[]) {
     return args;
 }
 
-int runCliMode(const std::string& mode, const std::string& inputPath,
-               const std::string& outputPath) {
-    ConsoleUI ui(std::cin, std::cout);
+int runCliMode(const std::vector<std::string> &args, bool ascii)
+{
+    ConsoleUI ui(std::cin, std::cout, ascii);
     Compressor compressor;
     Decompressor decompressor;
     MenuController controller(ui, compressor, decompressor);
 
-    if (mode == "-c") return controller.compressFile(inputPath, outputPath) ? 0 : 1;
-    if (mode == "-d") return controller.decompressFile(inputPath, outputPath) ? 0 : 1;
-    if (mode == "-v") return controller.compressAndVerify(inputPath, outputPath) ? 0 : 1;
+    if (args[0] == "-c")
+        return controller.compressFile(args[1], args[2]) ? 0 : 1;
+    if (args[0] == "-d")
+        return controller.decompressFile(args[1], args[2]) ? 0 : 1;
+    if (args[0] == "-v")
+        return controller.compressAndVerify(args[1], args[2]) ? 0 : 1;
+    if (args[0] == "-i")
+        return controller.showFileInfo(args[1]) ? 0 : 1;
+    std::cerr << message(MessageId::InvalidMode, ascii) << args[0]
+              << message(MessageId::InvalidModeHelp, ascii) << "\n";
     return 1;
 }
 
 } // namespace
 
-int main(int argc, char* argv[]) {
-    const std::vector<std::string> args = utf8Arguments(argc, argv);
-    if (argc == 2) {
-        const std::string arg = args[1];
-        if (arg == "--help" || arg == "-h") {
-            printHelp();
-            return 0;
-        }
-        if (arg == "--menu" || arg == "-m") {
-            ConsoleUI ui(std::cin, std::cout);
-            Compressor compressor;
-            Decompressor decompressor;
-            return MenuController(ui, compressor, decompressor).run();
-        }
-        std::cerr << "Loi: Che do khong hop le '" << arg << "'. Dung '--help' de xem huong dan.\n";
-        return 1;
+int main(int argc, char *argv[])
+{
+#ifdef _MSC_VER
+    char *asciiEnvironment = nullptr;
+    std::size_t environmentLength = 0;
+    const bool hasAsciiEnvironment =
+        _dupenv_s(&asciiEnvironment, &environmentLength, "HUFFMAN_ASCII") == 0 &&
+        asciiEnvironment != nullptr;
+    bool ascii = hasAsciiEnvironment && std::string(asciiEnvironment) == "1";
+    std::free(asciiEnvironment);
+#else
+    const char *asciiEnvironment = std::getenv("HUFFMAN_ASCII");
+    bool ascii = asciiEnvironment != nullptr && std::string(asciiEnvironment) == "1";
+#endif
+    std::vector<std::string> arguments = utf8Arguments(argc, argv);
+    std::vector<std::string> args;
+    args.reserve(arguments.size() > 0 ? arguments.size() - 1 : 0);
+    for (std::size_t i = 1; i < arguments.size(); ++i)
+    {
+        if (arguments[i] == "--ascii")
+            ascii = true;
+        else
+            args.push_back(arguments[i]);
     }
 
-    if (argc == 1) {
-        ConsoleUI ui(std::cin, std::cout);
+    if (args.empty())
+    {
+        ConsoleUI ui(std::cin, std::cout, ascii);
         Compressor compressor;
         Decompressor decompressor;
         return MenuController(ui, compressor, decompressor).run();
     }
-
-    if (argc != 4) {
-        std::cerr << "Loi: Sai so luong tham so. Dung '--help' de xem huong dan.\n";
-        return 1;
+    if (args.size() == 1 && (args[0] == "--help" || args[0] == "-h"))
+    {
+        printHelp(ascii);
+        return 0;
     }
-
-    const std::string mode = args[1];
-    if (mode != "-c" && mode != "-d" && mode != "-v") {
-        std::cerr << "Loi: Che do khong hop le '" << mode << "'. Dung '--help' de xem huong dan.\n";
-        return 1;
+    if (args.size() == 1 && (args[0] == "--menu" || args[0] == "-m"))
+    {
+        ConsoleUI ui(std::cin, std::cout, ascii);
+        Compressor compressor;
+        Decompressor decompressor;
+        return MenuController(ui, compressor, decompressor).run();
     }
-    return runCliMode(mode, args[2], args[3]);
+    if (args.size() == 2 && args[0] == "-i")
+        return runCliMode(args, ascii);
+    if (args.size() == 3 &&
+        (args[0] == "-c" || args[0] == "-d" || args[0] == "-v"))
+        return runCliMode(args, ascii);
+
+    if (!args.empty() && args[0] != "-c" && args[0] != "-d" &&
+        args[0] != "-v" && args[0] != "-i")
+        std::cerr << message(MessageId::InvalidMode, ascii) << args[0]
+                  << message(MessageId::InvalidModeHelp, ascii) << "\n";
+    else
+        std::cerr << message(MessageId::InvalidArgumentCount, ascii) << "\n";
+    return 1;
 }

@@ -2,6 +2,7 @@
 
 int detectFormatVersion(const char magic[MAGIC_SIZE]) {
     if (magic[0] != 'H' || magic[1] != 'U' || magic[2] != 'F') return 0;
+    if (magic[3] == '3') return 3;
     if (magic[3] == '2') return 2;
     if (magic[3] == '1') return 1;
     return 0;

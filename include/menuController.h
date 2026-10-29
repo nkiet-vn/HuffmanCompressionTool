@@ -22,7 +22,7 @@ public:
     bool compressFile(const std::string& inputPath, const std::string& outputPath);
     bool decompressFile(const std::string& inputPath, const std::string& outputPath);
     bool compressAndVerify(const std::string& inputPath, const std::string& compressedPath);
-    void showFileInfo(const std::string& path) const;
+    bool showFileInfo(const std::string& path) const;
 
 private:
     // --- Xử lý từng mục menu ---

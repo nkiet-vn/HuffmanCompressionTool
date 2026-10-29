@@ -1,25 +1,21 @@
-
 cmake_minimum_required(VERSION 3.16)
 project(HuffmanCompressionTool LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Build type mặc định
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-# Cờ cảnh báo
 if(MSVC)
-    add_compile_options(/W4 /utf-8)   # đọc source UTF-8 đúng, không phụ thuộc bảng mã máy
+    add_compile_options(/W4 /utf-8)
 else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-include_directories(${CMAKE_SOURCE_DIR}/include)
-
-add_library(huffman_core
+add_library(huffmanCore
+    src/canonicalHuffman.cpp
     src/huffmanTree.cpp
     src/bitReader.cpp
     src/crc32.cpp
@@ -27,86 +23,72 @@ add_library(huffman_core
     src/compressor.cpp
     src/decompressor.cpp
 )
+target_include_directories(huffmanCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(huffmanCore PUBLIC cxx_std_17)
+target_link_libraries(huffmanCore PUBLIC
+    $<$<AND:$<CXX_COMPILER_ID:GNU>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,9.0>>:stdc++fs>
+)
 
-add_library(t10Core STATIC
+add_library(utilCore STATIC
     src/sha256.cpp
     src/fileHasher.cpp
     src/compressionStats.cpp
     src/compressionVerifier.cpp
 )
-
-target_include_directories(t10Core PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_compile_features(t10Core PUBLIC cxx_std_17)
-
-target_link_libraries(t10Core PUBLIC
+target_include_directories(utilCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(utilCore PUBLIC cxx_std_17)
+target_link_libraries(utilCore PUBLIC
     $<$<AND:$<CXX_COMPILER_ID:GNU>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,9.0>>:stdc++fs>
 )
 
-add_library(consoleUI STATIC
-    src/consoleUI.cpp
-)
-target_link_libraries(consoleUI PUBLIC t10Core)
+add_library(consoleUi STATIC src/consoleUI.cpp)
+target_include_directories(consoleUi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(consoleUi PUBLIC cxx_std_17)
+target_link_libraries(consoleUi PUBLIC utilCore)
 
-add_library(appCore STATIC
-    src/menuController.cpp
-)
-target_link_libraries(appCore PUBLIC consoleUI huffman_core)
+add_library(appCore STATIC src/menuController.cpp)
+target_include_directories(appCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(appCore PUBLIC cxx_std_17)
+target_link_libraries(appCore PUBLIC consoleUi huffmanCore)
 
 add_executable(huffman src/main.cpp)
-target_link_libraries(huffman PRIVATE huffman_core t10Core consoleUI appCore)
+target_link_libraries(huffman PRIVATE huffmanCore utilCore consoleUi appCore)
+install(TARGETS huffman RUNTIME DESTINATION bin)
 
-enable_testing()
+option(HUFFMAN_BUILD_TESTS "Build HuffmanCompressionTool tests" ON)
 
-# Chạy test trong thư mục build để file rác không rơi vào thư mục gốc dự án.
-set(TEST_WORK_DIR ${CMAKE_CURRENT_BINARY_DIR})
+if(HUFFMAN_BUILD_TESTS)
+    enable_testing()
 
-add_executable(test_huffmanTree tests/test_huffmanTree.cpp)
-target_link_libraries(test_huffmanTree PRIVATE huffman_core)
-add_test(NAME huffmanTree COMMAND test_huffmanTree WORKING_DIRECTORY ${TEST_WORK_DIR})
+    function(addHuffmanTest name source)
+        set(testTarget "test_${name}")
+        add_executable(${testTarget} ${source})
+        target_link_libraries(${testTarget} PRIVATE ${ARGN})
+        add_test(NAME ${name} COMMAND ${testTarget}
+                 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    endfunction()
 
-add_executable(test_bitReader tests/test_bitReader.cpp)
-target_link_libraries(test_bitReader PRIVATE huffman_core)
-add_test(NAME bitReader COMMAND test_bitReader WORKING_DIRECTORY ${TEST_WORK_DIR})
+    addHuffmanTest(huffmanTree tests/test_huffmanTree.cpp huffmanCore)
+    addHuffmanTest(bitReader tests/test_bitReader.cpp huffmanCore)
+    addHuffmanTest(roundtrip tests/test_roundtrip.cpp huffmanCore)
+    addHuffmanTest(bitWriter tests/test_bitWriter.cpp huffmanCore)
+    addHuffmanTest(compress tests/test_compress.cpp huffmanCore)
+    addHuffmanTest(minheap tests/test_minheap.cpp huffmanCore)
+    addHuffmanTest(menu tests/test_menu.cpp appCore huffmanCore consoleUi)
+    addHuffmanTest(testT10 tests/testT10.cpp utilCore)
+    addHuffmanTest(verify_samples tests/verify_samples.cpp huffmanCore utilCore)
+    addHuffmanTest(huffmanCore tests/test_huffmancore.cpp huffmanCore)
+    addHuffmanTest(huf2 tests/test_huf2.cpp huffmanCore utilCore)
+    addHuffmanTest(canonicalHuffman tests/test_canonicalHuffman.cpp huffmanCore)
+    addHuffmanTest(output_guard tests/test_output_guard.cpp huffmanCore)
 
-add_executable(test_roundtrip tests/test_roundtrip.cpp)
-target_link_libraries(test_roundtrip PRIVATE huffman_core)
-add_test(NAME roundtrip COMMAND test_roundtrip WORKING_DIRECTORY ${TEST_WORK_DIR})
-
-add_executable(test_bitWriter tests/test_bitWriter.cpp)
-target_link_libraries(test_bitWriter PRIVATE huffman_core)
-add_test(NAME bitWriter COMMAND test_bitWriter WORKING_DIRECTORY ${TEST_WORK_DIR})
-
-add_executable(test_compress tests/test_compress.cpp)
-target_link_libraries(test_compress PRIVATE huffman_core)
-add_test(NAME compress COMMAND test_compress WORKING_DIRECTORY ${TEST_WORK_DIR})
-
-add_executable(test_minheap tests/test_minheap.cpp)
-target_link_libraries(test_minheap PRIVATE huffman_core)
-add_test(NAME minheap COMMAND test_minheap WORKING_DIRECTORY ${TEST_WORK_DIR})
-
-add_executable(test_menu tests/test_menu.cpp)
-target_link_libraries(test_menu PRIVATE appCore huffman_core consoleUI)
-add_test(NAME menu COMMAND test_menu WORKING_DIRECTORY ${TEST_WORK_DIR})
-
-add_executable(testT10 tests/testT10.cpp)
-target_link_libraries(testT10 PRIVATE t10Core)
-add_test(NAME testT10 COMMAND testT10 WORKING_DIRECTORY ${TEST_WORK_DIR})
-
-add_executable(verify_samples tests/verify_samples.cpp)
-target_link_libraries(verify_samples PRIVATE huffman_core t10Core)
-add_test(NAME verify_samples COMMAND verify_samples WORKING_DIRECTORY ${TEST_WORK_DIR})
-
-add_executable(testHuffmanCore tests/test_huffmancore.cpp)
-target_link_libraries(testHuffmanCore PRIVATE huffman_core)
-add_test(NAME huffmanCore COMMAND testHuffmanCore WORKING_DIRECTORY ${TEST_WORK_DIR})
-
-add_executable(test_huf2 tests/test_huf2.cpp)
-target_link_libraries(test_huf2 PRIVATE huffman_core)
-add_test(NAME huf2 COMMAND test_huf2 WORKING_DIRECTORY ${TEST_WORK_DIR})
-
-add_executable(test_output_guard tests/test_output_guard.cpp)
-target_link_libraries(test_output_guard PRIVATE huffman_core)
-add_test(NAME output_guard COMMAND test_output_guard WORKING_DIRECTORY ${TEST_WORK_DIR})
+    add_test(NAME cli_info COMMAND huffman -i ${CMAKE_CURRENT_SOURCE_DIR}/README.md)
+    set_tests_properties(cli_info PROPERTIES PASS_REGULAR_EXPRESSION "Tệp thường")
+    add_test(NAME cli_ascii_info COMMAND huffman --ascii -i ${CMAKE_CURRENT_SOURCE_DIR}/README.md)
+    set_tests_properties(cli_ascii_info PROPERTIES PASS_REGULAR_EXPRESSION "Tep thuong")
+    add_test(NAME cli_info_missing
+             COMMAND huffman -i ${CMAKE_CURRENT_BINARY_DIR}/missing-cli-info-file)
+    set_tests_properties(cli_info_missing PROPERTIES WILL_FAIL TRUE)
+    add_test(NAME cli_info_bad_args COMMAND huffman -i)
+    set_tests_properties(cli_info_bad_args PROPERTIES WILL_FAIL TRUE)
+endif()

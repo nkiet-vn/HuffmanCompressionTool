@@ -5,6 +5,7 @@
 #include <random>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "compressionStats.h"
@@ -20,11 +21,12 @@ struct Sample {
     bool expectSmaller;  // file đủ lớn thì file nén phải nhỏ hơn file gốc
 };
 
-// Đọc byte thứ 5 của file nén (mode HUF2): 0 = HUFFMAN, 1 = STORED.
+// Đọc byte thứ 5 của file nén (mode HUF3): 0 = HUFFMAN, 1 = STORED.
 static std::string modeLabel(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
     char header[5] = {};
-    if (!in.read(header, 5) || header[0] != 'H' || header[1] != 'U' || header[2] != 'F' || header[3] != '2')
+    if (!in.read(header, 5) || header[0] != 'H' || header[1] != 'U' ||
+        header[2] != 'F' || header[3] != '3')
         return "?";
     return header[4] == 0 ? "HUFFMAN" : (header[4] == 1 ? "STORED" : "?");
 }
@@ -46,6 +48,34 @@ static std::string randomBytes(std::size_t size, std::uint32_t seed) {
     std::string out(size, '\0');
     for (std::size_t i = 0; i < size; ++i) out[i] = static_cast<char>(rng() & 0xFFu);
     return out;
+}
+
+static std::size_t leb128Size(std::uint64_t value) {
+    std::size_t size = 1;
+    while (value >= 0x80u) {
+        value >>= 7;
+        ++size;
+    }
+    return size;
+}
+
+static std::pair<std::size_t, std::size_t> huffmanHeaderSizes(const std::string& path) {
+    std::uint64_t frequencies[256] = {};
+    std::ifstream input(path, std::ios::binary);
+    char byte = 0;
+    while (input.get(byte))
+        ++frequencies[static_cast<unsigned char>(byte)];
+
+    std::size_t uniqueCount = 0;
+    std::size_t huf2Size = 17 + 2;
+    for (std::uint64_t frequency : frequencies) {
+        if (frequency == 0)
+            continue;
+        ++uniqueCount;
+        huf2Size += 1 + leb128Size(frequency);
+    }
+    const std::size_t huf3Size = 17 + 2 + uniqueCount * 2;
+    return {huf2Size, huf3Size};
 }
 
 int main(int argc, char** argv) {
@@ -86,6 +116,14 @@ int main(int argc, char** argv) {
     std::ostringstream table;
     table << "| File | Goc (byte) | Nen (byte) | Ty le nen | Mode | Hash | Ket qua |\n";
     table << "|---|---:|---:|---:|---|---|---|\n";
+    std::ostringstream headerTable;
+    headerTable << "\n| File mẫu | Header HUF2-HUFFMAN (byte) | Header HUF3-HUFFMAN (byte) | Giảm (byte) |\n";
+    headerTable << "|---|---:|---:|---:|\n";
+    for (const std::string& name : {"dai", "tieng_viet_utf8", "ngau_nhien"}) {
+        const auto sizes = huffmanHeaderSizes(dir + "/" + name + ".txt");
+        headerTable << "| " << name << " | " << sizes.first << " | " << sizes.second
+                    << " | " << sizes.first - sizes.second << " |\n";
+    }
 
     int failures = 0;
     if (formatCompressionRatio(calculateCompressionRatio(1000000, 999999)) != "0.00%" ||
@@ -104,7 +142,7 @@ int main(int argc, char** argv) {
             ok = false;
             log << "Loi: file nen khong nho hon file goc\n";
         }
-        // Với định dạng HUF2, file nén không bao giờ lớn hơn gốc quá HEADER_SIZE (17) byte.
+        // Với định dạng HUF3, file nén không bao giờ lớn hơn gốc quá HEADER_SIZE (17) byte.
         if (ok && r.info && r.info->compressedSize > r.info->originalSize + 17) {
             ok = false;
             log << "Loi: file nen vuot qua goc + 17 byte\n";
@@ -124,7 +162,8 @@ int main(int argc, char** argv) {
     }
 
     std::cout << table.str();
-    std::ofstream("ket_qua_nen.md") << table.str();
+    std::cout << headerTable.str();
+    std::ofstream("ket_qua_nen.md") << table.str() << headerTable.str();
 
     fs::remove_all(dir);
     std::cout << (failures == 0 ? "\nTat ca file deu PASS\n" : "\nCo file bi FAIL\n");

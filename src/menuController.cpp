@@ -1,6 +1,8 @@
 ﻿#include "menuController.h"
 #include "pathUtil.h"
 
+#include <array>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <system_error>
@@ -10,6 +12,7 @@
 #include "fileFormat.h"
 #include "compressor.h"
 #include "decompressor.h"
+#include "messages.h"
 
 namespace fs = std::filesystem;
 
@@ -33,40 +36,40 @@ MenuController::MenuController(ConsoleUI &ui, Compressor &compressor, Decompress
 std::vector<MenuItem> MenuController::buildMenuItems() const
 {
     return {
-        {"1", "Nen file", "nen file bat ky thanh dinh dang HUF2"},
-        {"2", "Giai nen file", "khoi phuc file tu .bin"},
-        {"3", "Nen va xac minh SHA-256", "nen + giai nen lai + so sanh hash"},
-        {"4", "Xem thong tin file", "kich thuoc, dinh dang HUF2"},
-        {"5", "Huong dan / tro giup", "cach dung dong lenh"},
-        {"6", "Thong tin phan mem", "phien ban, cau truc du lieu chinh"},
-        {"0", "Thoat", ""},
+        {"1", ui_.text(MessageId::MenuCompress), ui_.text(MessageId::MenuCompressDescription)},
+        {"2", ui_.text(MessageId::MenuDecompress), ui_.text(MessageId::MenuDecompressDescription)},
+        {"3", ui_.text(MessageId::MenuVerify), ui_.text(MessageId::MenuVerifyDescription)},
+        {"4", ui_.text(MessageId::MenuFileInfo), ui_.text(MessageId::MenuFileInfoDescription)},
+        {"5", ui_.text(MessageId::MenuHelp), ui_.text(MessageId::MenuHelpDescription)},
+        {"6", ui_.text(MessageId::MenuAbout), ui_.text(MessageId::MenuAboutDescription)},
+        {"0", ui_.text(MessageId::MenuExit), ""},
     };
 }
 
 int MenuController::run()
 {
-    ui_.showHeader({kToolName, "Cong cu nen va giai nen file bang thuat toan Huffman", kVersion});
+    ui_.showHeader({kToolName, ui_.text(MessageId::ToolSubtitle), kVersion});
 
     while (running_)
     {
         ui_.showMenu(buildMenuItems());
 
-        const std::optional<std::string> choice = ui_.readChoice("Chon chuc nang [0-6]: ");
+        const std::optional<std::string> choice = ui_.readChoice();
         if (!choice)
         { // EOF: kết thúc phiên làm việc
-            ui_.showInfo("Ket thuc phien lam viec.");
+            ui_.showInfo(ui_.text(MessageId::SessionEnded));
             break;
         }
 
         if (choice->empty())
         {
-            ui_.showWarning("Ban chua chon chuc nang nao.");
+            ui_.showWarning(ui_.text(MessageId::NoChoice));
             continue;
         }
         if (*choice == "0" || *choice == "q" || *choice == "thoat")
         {
             running_ = false;
-            ui_.showSuccess("Tam biet!");
+            ui_.showSuccess(ui_.text(MessageId::Goodbye));
             break;
         }
         if (*choice == "1")
@@ -95,7 +98,8 @@ int MenuController::run()
         }
         else
         {
-            ui_.showError("Lua chon '" + *choice + "' khong hop le. Chon tu 0 den 6.");
+            ui_.showError(std::string(ui_.text(MessageId::InvalidChoicePrefix)) + *choice +
+                          "' " + ui_.text(MessageId::InvalidChoice));
             continue;
         }
 
@@ -109,30 +113,49 @@ int MenuController::run()
 
 bool MenuController::compressFile(const std::string &inputPath, const std::string &outputPath)
 {
-    ui_.showInfo("Dang nen: " + inputPath + "  ->  " + outputPath);
-    if (!compressor_.compress(inputPath, outputPath))
+    ui_.showInfo(std::string(ui_.text(MessageId::Compressing)) + inputPath + "  ->  " + outputPath);
+    ProgressCallback progress;
+    const std::optional<std::uintmax_t> sourceSize = getFileSize(inputPath);
+    if (sourceSize && *sourceSize > 10ULL * 1024ULL * 1024ULL &&
+        ConsoleUI::standardOutputIsTerminal())
     {
-        ui_.showError("Nen that bai. Kiem tra lai duong dan file nguon.");
+        progress = [this](std::uint64_t current, std::uint64_t total)
+        {
+            if (total != 0)
+                ui_.showProgress(static_cast<unsigned int>(100.0 * current / total));
+        };
+    }
+    if (!compressor_.compressWithProgress(inputPath, outputPath, progress))
+    {
+        const MessageId error = compressor_.lastError();
+        const std::string detail = compressor_.lastErrorDetails();
+        ui_.showError(error == MessageId::None
+                          ? ui_.text(MessageId::CompressionFailed)
+                          : std::string(ui_.text(error)) + detail);
         return false;
     }
 
     const std::optional<CompressionInfo> info = getCompressionInfo(inputPath, outputPath);
     if (info)
     {
-        ui_.showSection("THONG KE NEN");
-        ui_.showKeyValue("Kich thuoc goc", ConsoleUI::formatBytes(info->originalSize) +
-                                               " (" + std::to_string(info->originalSize) + " byte)");
-        ui_.showKeyValue("Kich thuoc file nen", ConsoleUI::formatBytes(info->compressedSize) +
-                                                    " (" + std::to_string(info->compressedSize) + " byte)");
-        ui_.showKeyValue("Ty le nen", formatCompressionRatio(info->ratioPercent));
+        ui_.showSection(ui_.text(MessageId::CompressionStatsSection));
+        ui_.showKeyValue(ui_.text(MessageId::OriginalSize), ConsoleUI::formatBytes(info->originalSize) +
+                                               " (" + std::to_string(info->originalSize) +
+                                               ui_.text(MessageId::ByteUnit) + ")");
+        ui_.showKeyValue(ui_.text(MessageId::CompressedSize), ConsoleUI::formatBytes(info->compressedSize) +
+                                                    " (" + std::to_string(info->compressedSize) +
+                                                    ui_.text(MessageId::ByteUnit) + ")");
+        ui_.showKeyValue(ui_.text(MessageId::CompressionRatio), formatCompressionRatio(info->ratioPercent));
 
         if (info->ratioPercent && *info->ratioPercent < 0.0)
         {
-            ui_.showWarning("File nen LON HON file goc: header chiem nhieu hon phan du lieu tiet kiem.");
+            ui_.showWarning(ui_.text(MessageId::LargerThanOriginal));
         }
         else if (info->ratioPercent)
         {
-            ui_.showSuccess("Da tiet kiem " + formatCompressionRatio(info->ratioPercent) + " dung luong.");
+            ui_.showSuccess(std::string(ui_.text(MessageId::SavedSpace)) +
+                            formatCompressionRatio(info->ratioPercent) +
+                            ui_.text(MessageId::SavedSpaceSuffix));
         }
     }
     return true;
@@ -140,16 +163,29 @@ bool MenuController::compressFile(const std::string &inputPath, const std::strin
 
 bool MenuController::decompressFile(const std::string &inputPath, const std::string &outputPath)
 {
-    ui_.showInfo("Dang giai nen: " + inputPath + "  ->  " + outputPath);
-    if (!decompressor_.decompress(inputPath, outputPath))
+    ui_.showInfo(std::string(ui_.text(MessageId::Decompressing)) + inputPath + "  ->  " + outputPath);
+    ProgressCallback progress;
+    if (ConsoleUI::standardOutputIsTerminal())
     {
-        ui_.showError("Giai nen that bai. File .bin co the bi hong hoac khong dung dinh dang HUF2/HUF1.");
+        progress = [this](std::uint64_t current, std::uint64_t total)
+        {
+            if (total != 0)
+                ui_.showProgress(static_cast<unsigned int>(100.0 * current / total));
+        };
+    }
+    if (!decompressor_.decompressWithProgress(inputPath, outputPath, progress))
+    {
+        const MessageId error = decompressor_.lastError();
+        const std::string detail = decompressor_.lastErrorDetails();
+        ui_.showError(error == MessageId::None
+                          ? ui_.text(MessageId::DecompressionFailed)
+                          : std::string(ui_.text(error)) + detail);
         return false;
     }
 
     const std::optional<std::uintmax_t> size = getFileSize(outputPath);
     if (size)
-        ui_.showKeyValue("Kich thuoc file dau ra", ConsoleUI::formatBytes(*size));
+        ui_.showKeyValue(ui_.text(MessageId::OutputSize), ConsoleUI::formatBytes(*size));
     return true;
 }
 
@@ -159,19 +195,19 @@ bool MenuController::compressAndVerify(const std::string &inputPath,
     if (!compressFile(inputPath, compressedPath))
         return false;
 
-    ui_.showSection("XAC MINH KHOI PHUC (SHA-256)");
+    ui_.showSection(ui_.text(MessageId::VerifySection));
 
     const std::optional<std::string> originalHash = computeFileSha256(inputPath);
     if (!originalHash)
     {
-        ui_.showError("Khong tinh duoc SHA-256 cua file goc.");
+        ui_.showError(ui_.text(MessageId::OriginalHashFailed));
         return false;
     }
 
     const std::string tempPath = compressedPath + ".verify_tmp";
     if (!decompressor_.decompress(compressedPath, tempPath))
     {
-        ui_.showError("Giai nen xac minh that bai.");
+        ui_.showError(ui_.text(MessageId::VerifyDecompressionFailed));
         std::error_code ec;
         fs::remove(toPath(tempPath), ec);
         return false;
@@ -183,49 +219,95 @@ bool MenuController::compressAndVerify(const std::string &inputPath,
 
     if (!restoredHash)
     {
-        ui_.showError("Khong tinh duoc SHA-256 cua file phuc hoi.");
+        ui_.showError(ui_.text(MessageId::RestoredHashFailed));
         return false;
     }
 
-    ui_.showKeyValue("SHA-256 goc", *originalHash);
-    ui_.showKeyValue("SHA-256 phuc hoi", *restoredHash);
+    ui_.showKeyValue(ui_.text(MessageId::OriginalHash), *originalHash);
+    ui_.showKeyValue(ui_.text(MessageId::RestoredHash), *restoredHash);
 
     if (*originalHash != *restoredHash)
     {
-        ui_.showError("Hash khong khop - file phuc hoi khac file goc.");
+        ui_.showError(ui_.text(MessageId::HashMismatch));
         return false;
     }
-    ui_.showSuccess("Xac minh thanh cong: file phuc hoi giong file goc 100%.");
+    ui_.showSuccess(ui_.text(MessageId::VerifySuccess));
     return true;
 }
 
-void MenuController::showFileInfo(const std::string &path) const
+bool MenuController::showFileInfo(const std::string &path) const
 {
     std::error_code ec;
     const std::uintmax_t size = fs::file_size(toPath(path), ec);
     if (ec)
     {
-        ui_.showError("Khong doc duoc file: " + path);
-        return;
+        ui_.showError(std::string(ui_.text(MessageId::FileReadFailed)) + path);
+        return false;
     }
 
-    ui_.showSection("THONG TIN FILE");
-    ui_.showKeyValue("Duong dan", path);
-    ui_.showKeyValue("Kich thuoc", ConsoleUI::formatBytes(size) + " (" + std::to_string(size) + " byte)");
-
     std::ifstream probe(toPath(path), std::ios::binary);
-    char magic[4] = {};
-    const bool hasMagic = static_cast<bool>(probe.read(magic, 4));
-    probe.close();
+    std::array<char, 17> header{};
+    const bool hasMagic = static_cast<bool>(probe.read(header.data(), 4));
+    const int version = hasMagic ? detectFormatVersion(header.data()) : 0;
+    MessageId format = MessageId::FilePlain;
+    std::optional<std::uint64_t> originalLength;
+    std::optional<std::uint64_t> uniqueCount;
+    if ((version == 2 || version == 3) && probe.read(header.data() + 4, 13))
+    {
+        const std::uint8_t mode = static_cast<std::uint8_t>(header[4]);
+        if (mode == MODE_HUFFMAN || mode == MODE_STORED)
+        {
+            format = version == 3
+                         ? (mode == MODE_HUFFMAN ? MessageId::FileHuf3Huffman
+                                                 : MessageId::FileHuf3Stored)
+                         : (mode == MODE_HUFFMAN ? MessageId::FileHuf2Huffman
+                                                 : MessageId::FileHuf2Stored);
+            originalLength = readLittleEndian(
+                reinterpret_cast<const std::uint8_t *>(header.data() + 5), 8);
+            if (mode == MODE_HUFFMAN)
+            {
+                std::array<std::uint8_t, 2> countBytes{};
+                if (probe.read(reinterpret_cast<char *>(countBytes.data()), 2))
+                    uniqueCount = readLittleEndian(countBytes.data(), 2);
+            }
+        }
+    }
+    else if (version == 1)
+    {
+        std::array<std::uint8_t, 10> legacyHeader{};
+        if (probe.read(reinterpret_cast<char *>(legacyHeader.data()), 10))
+        {
+            format = MessageId::FileHuf1;
+            uniqueCount = readLittleEndian(legacyHeader.data(), 2);
+            originalLength = readLittleEndian(legacyHeader.data() + 2, 8);
+        }
+    }
 
-    const int version = hasMagic ? detectFormatVersion(magic) : 0;
-    const char *formatName = version == 2 ? "HUF2 (da nen)"
-                            : version == 1 ? "HUF1 (da nen, dinh dang cu)"
-                                           : "Khong phai HUF2/HUF1 (file thuong)";
-    ui_.showKeyValue("Dinh dang", formatName);
-
-    if (const std::optional<std::string> hash = computeFileSha256(path))
-        ui_.showKeyValue("SHA-256", *hash);
+    ui_.showSection(ui_.text(MessageId::FileInfoSection));
+    ui_.showKeyValue(ui_.text(MessageId::FilePath), path);
+    ui_.showKeyValue(ui_.text(MessageId::FileSize),
+                     ConsoleUI::formatBytes(size) + " (" + std::to_string(size) +
+                         ui_.text(MessageId::ByteUnit) + ")");
+    ui_.showKeyValue(ui_.text(MessageId::FileFormat), ui_.text(format));
+    ui_.showKeyValue(ui_.text(MessageId::OriginalLength),
+                     originalLength
+                         ? std::to_string(*originalLength) + ui_.text(MessageId::ByteUnit)
+                         : ui_.text(MessageId::NotApplicable));
+    const auto ratio = originalLength
+                           ? calculateCompressionRatio(*originalLength, size)
+                           : std::optional<double>{};
+    ui_.showKeyValue(ui_.text(MessageId::CompressionRate),
+                     originalLength ? formatCompressionRatio(ratio) : ui_.text(MessageId::NotApplicable));
+    if (uniqueCount)
+        ui_.showKeyValue(ui_.text(MessageId::UniqueCount), std::to_string(*uniqueCount));
+    const std::optional<std::string> hash = computeFileSha256(path);
+    if (!hash)
+    {
+        ui_.showError(std::string(ui_.text(MessageId::FileReadFailed)) + path);
+        return false;
+    }
+    ui_.showKeyValue(ui_.text(MessageId::Sha256), *hash);
+    return true;
 }
 
 // ---------------------------------------------------------------- handlers
@@ -235,7 +317,7 @@ std::optional<std::string> MenuController::askExistingFile(const std::string &pr
     const std::string path = ui_.readNonEmptyLine(prompt);
     if (!isRegularFile(path))
     {
-        ui_.showError("Khong tim thay file: " + path);
+        ui_.showError(std::string(ui_.text(MessageId::FileNotFound)) + path);
         return std::nullopt;
     }
     return path;
@@ -245,21 +327,23 @@ bool MenuController::confirmOverwrite(const std::string &outputPath) const
 {
     if (!isRegularFile(outputPath))
         return true;
-    return ui_.confirm("File dich '" + outputPath + "' da ton tai, ghi de?", false);
+    return ui_.confirm(std::string(ui_.text(MessageId::OverwriteQuestion)) + outputPath +
+                           ui_.text(MessageId::OverwriteSuffix),
+                       false);
 }
 
 void MenuController::handleCompress()
 {
-    ui_.showSection("NEN FILE");
+    ui_.showSection(ui_.text(MessageId::CompressSection));
 
-    const std::optional<std::string> input = askExistingFile("File nguon: ");
+    const std::optional<std::string> input = askExistingFile(ui_.text(MessageId::SourcePrompt));
     if (!input)
         return;
 
-    const std::string output = ui_.readNonEmptyLine("File nen dau ra (vd: data.bin): ");
+    const std::string output = ui_.readNonEmptyLine(ui_.text(MessageId::CompressionDestinationPrompt));
     if (!confirmOverwrite(output))
     {
-        ui_.showInfo("Da huy thao tac.");
+        ui_.showInfo(ui_.text(MessageId::Cancelled));
         return;
     }
     compressFile(*input, output);
@@ -267,16 +351,16 @@ void MenuController::handleCompress()
 
 void MenuController::handleDecompress()
 {
-    ui_.showSection("GIAI NEN FILE");
+    ui_.showSection(ui_.text(MessageId::DecompressSection));
 
-    const std::optional<std::string> input = askExistingFile("File .bin can giai nen: ");
+    const std::optional<std::string> input = askExistingFile(ui_.text(MessageId::CompressedFilePrompt));
     if (!input)
         return;
 
-    const std::string output = ui_.readNonEmptyLine("File dau ra: ");
+    const std::string output = ui_.readNonEmptyLine(ui_.text(MessageId::DestinationPrompt));
     if (!confirmOverwrite(output))
     {
-        ui_.showInfo("Da huy thao tac.");
+        ui_.showInfo(ui_.text(MessageId::Cancelled));
         return;
     }
     decompressFile(*input, output);
@@ -284,16 +368,16 @@ void MenuController::handleDecompress()
 
 void MenuController::handleVerify()
 {
-    ui_.showSection("NEN VA XAC MINH");
+    ui_.showSection(ui_.text(MessageId::VerifyMenuSection));
 
-    const std::optional<std::string> input = askExistingFile("File nguon can nen: ");
+    const std::optional<std::string> input = askExistingFile(ui_.text(MessageId::SourcePrompt));
     if (!input)
         return;
 
-    const std::string output = ui_.readNonEmptyLine("File nen dau ra (vd: data.bin): ");
+    const std::string output = ui_.readNonEmptyLine(ui_.text(MessageId::CompressionDestinationPrompt));
     if (!confirmOverwrite(output))
     {
-        ui_.showInfo("Da huy thao tac.");
+        ui_.showInfo(ui_.text(MessageId::Cancelled));
         return;
     }
     compressAndVerify(*input, output);
@@ -301,33 +385,34 @@ void MenuController::handleVerify()
 
 void MenuController::handleFileInfo()
 {
-    ui_.showSection("XEM THONG TIN FILE");
+    ui_.showSection(ui_.text(MessageId::FileInfoSection));
 
-    const std::string path = ui_.readNonEmptyLine("Duong dan file: ");
+    const std::string path = ui_.readNonEmptyLine(ui_.text(MessageId::InfoPathPrompt));
     showFileInfo(path);
 }
 
 void MenuController::handleHelp() const
 {
-    ui_.showSection("HUONG DAN SU DUNG");
+    ui_.showSection(ui_.text(MessageId::HelpSection));
     const std::vector<std::vector<std::string>> rows = {
-        {"-c <nguon> <dich.bin>", "Nen file"},
-        {"-d <dich.bin> <ra>", "Giai nen file"},
-        {"-v <nguon> <dich.bin>", "Nen va xac minh SHA-256"},
-        {"-m, --menu", "Mo menu tuong tac nay"},
-        {"-h, --help", "Hien thi tro giup"},
+        {ui_.text(MessageId::HelpCmdCompress), ui_.text(MessageId::HelpCompress)},
+        {ui_.text(MessageId::HelpCmdDecompress), ui_.text(MessageId::HelpDecompress)},
+        {ui_.text(MessageId::HelpCmdVerify), ui_.text(MessageId::HelpVerify)},
+        {ui_.text(MessageId::HelpCmdInfo), ui_.text(MessageId::HelpInfo)},
+        {"-m, --menu", ui_.text(MessageId::HelpMenu)},
+        {"-h, --help", ui_.text(MessageId::HelpHelp)},
     };
-    ui_.showTable({"Lenh", "Mo ta"}, rows);
-    ui_.showInfo("Chay 'huffman' khong tham so cung se mo menu tuong tac.");
+    ui_.showTable({ui_.text(MessageId::HelpCommand), ui_.text(MessageId::HelpDescription)}, rows);
+    ui_.showInfo(ui_.text(MessageId::HelpMenuInfo));
 }
 
 void MenuController::handleAbout() const
 {
-    ui_.showSection("THONG TIN PHAN MEM");
-    ui_.showKeyValue("Ten", kToolName);
-    ui_.showKeyValue("Phien ban", kVersion);
-    ui_.showKeyValue("Ngon ngu", "C++17");
-    ui_.showKeyValue("Dinh dang file", "HUF2, doc duoc ca HUF1 (xem docs/fileFormat.md)");
-    ui_.showKeyValue("Cau truc du lieu", "Min-Heap tu viet (khoa: freq, minSymbol)");
-    ui_.showKeyValue("Toan ven du lieu", "CRC32 cua du lieu goc (HUF2) + SHA-256 khi dung -v");
+    ui_.showSection(ui_.text(MessageId::AboutSection));
+    ui_.showKeyValue(ui_.text(MessageId::Name), kToolName);
+    ui_.showKeyValue(ui_.text(MessageId::Version), kVersion);
+    ui_.showKeyValue(ui_.text(MessageId::Language), "C++17");
+    ui_.showKeyValue(ui_.text(MessageId::Format), ui_.text(MessageId::AboutFormat));
+    ui_.showKeyValue(ui_.text(MessageId::DataStructures), ui_.text(MessageId::AboutDataStructures));
+    ui_.showKeyValue(ui_.text(MessageId::Integrity), ui_.text(MessageId::AboutIntegrity));
 }

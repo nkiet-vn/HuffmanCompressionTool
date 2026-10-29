@@ -27,7 +27,7 @@ void test_aab_matches_spec()
     writeFile("aab.txt", "aab");
     assert(Compressor().compress("aab.txt", "aab.bin"));
     std::vector<unsigned char> expected = {
-        0x48, 0x55, 0x46, 0x32,    // magic "HUF2"
+        0x48, 0x55, 0x46, 0x33,    // magic "HUF3"
         0x01,                      // mode = STORED
         0x03, 0, 0, 0, 0, 0, 0, 0, // originalLength = 3
         0x97, 0x22, 0x0E, 0x69,    // crc32("aab") = 0x690E2297
@@ -35,7 +35,7 @@ void test_aab_matches_spec()
     assert(readFile("aab.bin") == expected);
 }
 
-// Du lieu lap lai nhieu -> ban HUFFMAN thang, header dung dinh dang HUF2 + bang LEB128.
+// Du lieu lap lai nhieu -> HUF3 HUFFMAN luu do dai ma chuan tac.
 void test_huffman_mode_layout()
 {
     const std::string text(3000, 'a');
@@ -43,19 +43,18 @@ void test_huffman_mode_layout()
     assert(Compressor().compress("huf_layout.txt", "huf_layout.bin"));
     std::vector<unsigned char> bin = readFile("huf_layout.bin");
 
-    // header + uniqueCount + (sym, freq 2 byte) + 3000 bit = 17 + 2 + 3 + 375 = 397
-    // (nho hon phuong an STORED 17 + 3000 = 3017 nen chon HUFFMAN)
-    assert(bin.size() == HEADER_SIZE + 2 + 3 + 375);
-    assert(bin[0] == 'H' && bin[1] == 'U' && bin[2] == 'F' && bin[3] == '2');
+    // header + uniqueCount + (symbol, codeLength) + 3000 bit = 17 + 2 + 2 + 375.
+    assert(bin.size() == HEADER_SIZE + 2 + 2 + 375);
+    assert(bin[0] == 'H' && bin[1] == 'U' && bin[2] == 'F' && bin[3] == '3');
     assert(bin[4] == MODE_HUFFMAN);
     assert(bin[5] == 0xB8 && bin[6] == 0x0B); // 3000 = 0x0BB8 little-endian
     for (int i = 0; i < 4; ++i)
         assert(bin[13 + i] == (((crc32(text.data(), text.size()) >> (8 * i)) & 0xFF)));
     assert(bin[17] == 0x01 && bin[18] == 0x00); // uniqueCount = 1
     assert(bin[19] == 'a');                     // symbol
-    assert(bin[20] == 0xB8 && bin[21] == 0x17); // freq = 3000 -> LEB128 0xB8 0x17
+    assert(bin[20] == 0x01);                    // code length = 1
     // 3000 bit "0" -> 375 byte toàn 0
-    for (size_t i = 22; i < bin.size(); ++i) assert(bin[i] == 0x00);
+    for (size_t i = 21; i < bin.size(); ++i) assert(bin[i] == 0x00);
 }
 
 // DoD: file nen nho hon file goc voi file mau

@@ -18,25 +18,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Bắt lỗi #include / CMakeLists.txt sai hoa thường (Windows/macOS không phát hiện được).
-      # Ép Git coi hoa thường là khác nhau rồi checkout lại để lấy đúng tên trên đĩa.
+      # Kiểm tra tên file trong include có đúng hoa thường (Linux phân biệt hoa thường).
       - name: Check file name case (Linux)
         if: runner.os == 'Linux'
         run: |
-          git config core.ignorecase false
-          git rm -r --cached . --quiet
-          git reset --hard HEAD
-          # Chỉ file của dự án (src/include/tests) mới bắt buộc camelCase; file mẫu giữ nguyên tên.
-          bad=$(git ls-files -- src include tests | grep -E '\.(h|cpp)$' | grep -vE '^[a-z0-9_/.]+$' || true)
-          if [ -n "$bad" ]; then echo "::error::Tên file phải là camelCase: $bad"; exit 1; fi
-          grep -rhoE '#include "[^"]+"' src include tests | sed -E 's/#include "([^"]+)"/\1/' | sort -u | while read -r h; do
+          mapfile -t headers < <(
+            grep -rhoE '#include[[:space:]]+"[^"]+"' src include tests |
+              sed -E 's/.*"([^"]+)".*/\1/' | sort -u
+          )
+          for h in "${headers[@]}"; do
             if [ ! -f "include/$h" ] && [ ! -f "src/$h" ] && [ ! -f "tests/$h" ]; then
               echo "::error::Không tìm thấy header '$h' với đúng hoa thường"; exit 1
             fi
-          done
-          # Mỗi đường dẫn src/*.cpp trong CMakeLists.txt phải tồn tại đúng hoa thường.
-          grep -oE 'src/[A-Za-z0-9_]+\.cpp' CMakeLists.txt | sort -u | while read -r p; do
-            if [ ! -f "$p" ]; then echo "::error::CMakeLists.txt tham chiếu '$p' nhưng không có file"; exit 1; fi
           done
 
       - name: Configure (Debug)
@@ -56,3 +49,35 @@ jobs:
 
       - name: Test (Release)
         run: ctest --test-dir build-release -C Release --output-on-failure
+
+      - name: CLI smoke test (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p build-release/smoke
+          sample="file_mau_txt/mau_giainen.txt"
+          archive="$PWD/build-release/smoke/sample.huf"
+          restored="$PWD/build-release/smoke/restored.txt"
+          ./build-release/huffman -c "$sample" "$archive"
+          ./build-release/huffman -d "$archive" "$restored"
+          cmp "$sample" "$restored"
+
+      - name: CLI smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem build-release -Filter huffman.exe -Recurse |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $exe) { throw 'Could not find the Release huffman.exe' }
+          $sample = (Resolve-Path file_mau_txt\mau_giainen.txt).Path
+          $smokeDir = Join-Path (Resolve-Path build-release).Path smoke
+          New-Item -ItemType Directory -Force -Path $smokeDir | Out-Null
+          $archive = Join-Path $smokeDir sample.huf
+          $restored = Join-Path $smokeDir restored.txt
+          & $exe -c $sample $archive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $exe -d $archive $restored
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & fc.exe /b $sample $restored
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

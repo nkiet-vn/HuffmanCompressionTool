@@ -4,10 +4,10 @@
 #include "fileFormat.h"
 #include "huffmanTree.h"
 #include "bitReader.h"
+#include "canonicalHuffman.h"
 #include <array>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <limits>
 #include <memory>
 #include <string>
@@ -17,33 +17,21 @@
 namespace
 {
 
-    bool fail(const char *msg)
-    {
-        std::cerr << "Loi: " << msg << "\n";
-        return false;
-    }
-
     struct OperationResult
     {
         bool success;
-        std::string message;
+        MessageId error = MessageId::None;
+        std::string details;
     };
 
     OperationResult successResult()
     {
-        return {true, {}};
+        return {true, MessageId::None, {}};
     }
 
-    OperationResult errorResult(const char *message)
+    OperationResult errorResult(MessageId error, const std::string &details = {})
     {
-        return {false, message};
-    }
-
-    bool reportResult(const OperationResult &result)
-    {
-        if (result.success)
-            return true;
-        return result.message.empty() ? false : fail(result.message.c_str());
+        return {false, error, details};
     }
 
     class OutputGuard
@@ -121,7 +109,7 @@ namespace
 
     OperationResult readFrequencyTable(std::istream &in, uint64_t uniqueCount,
                                        uint64_t originalLength, uint64_t freq[256],
-                                       FrequencyReader readFrequency, const char *frequencyError)
+                                       FrequencyReader readFrequency, MessageId frequencyError)
     {
         uint64_t sum = 0;
         int prevSymbol = -1;
@@ -129,7 +117,7 @@ namespace
         {
             const int next = in.get();
             if (next == std::char_traits<char>::eof())
-                return errorResult("Bang tan suat bi thieu du lieu");
+                return errorResult(MessageId::CodecFrequencyTableShort);
             const int symbol = static_cast<unsigned char>(next);
 
             uint64_t f = 0;
@@ -137,18 +125,18 @@ namespace
                 return errorResult(frequencyError);
 
             if (symbol <= prevSymbol)
-                return errorResult("Bang tan suat khong sap xep tang dan hoac bi trung symbol");
+                return errorResult(MessageId::CodecFrequencyOrder);
             if (f == 0)
-                return errorResult("Tan suat bang 0 trong bang tan suat");
+                return errorResult(MessageId::CodecZeroFrequency);
             if (f > originalLength - sum)
-                return errorResult("Tong tan suat khong khop originalLength");
+                return errorResult(MessageId::CodecFrequencyOverflow);
 
             sum += f;
             freq[symbol] = f;
             prevSymbol = symbol;
         }
         if (sum != originalLength)
-            return errorResult("Tong tan suat khac originalLength");
+            return errorResult(MessageId::CodecFrequencyTotalMismatch);
         return successResult();
     }
 
@@ -164,24 +152,70 @@ namespace
     {
         const std::streamoff tableStart = in.tellg();
         if (tableStart < 0)
-            return errorResult("Header bi thieu du lieu");
+            return errorResult(MessageId::CodecHeaderShort);
         if (uniqueCount > 256)
-            return errorResult("uniqueCount vuot qua 256");
+            return errorResult(MessageId::CodecUniqueCountTooLarge);
 
         const OperationResult tableResult =
             readFrequencyTable(in, uniqueCount, originalLength, table.frequencies,
                                hasCrc ? readHuf2Frequency : readHuf1Frequency,
-                               hasCrc ? "Varint tan suat khong hop le"
-                                      : "Bang tan suat bi thieu du lieu");
+                               hasCrc ? MessageId::CodecInvalidFrequencyVarint
+                                      : MessageId::CodecFrequencyTableShort);
         if (!tableResult.success)
             return tableResult;
 
         table.dataOffset = in.tellg();
         if (table.dataOffset < 0)
-            return errorResult("Bang tan suat bi thieu du lieu");
+            return errorResult(MessageId::CodecFrequencyTableShort);
         const uint64_t pos = static_cast<uint64_t>(table.dataOffset);
         if (pos > fileSize || pos < static_cast<uint64_t>(tableStart))
-            return errorResult("Bang tan suat bi thieu du lieu");
+            return errorResult(MessageId::CodecFrequencyTableShort);
+        return successResult();
+    }
+
+    struct HuffmanLengthTable
+    {
+        std::uint8_t lengths[256] = {};
+        std::vector<CanonicalCode> codes;
+        std::streamoff dataOffset = 0;
+    };
+
+    OperationResult readHuffmanLengthTable(std::ifstream &in, uint64_t fileSize,
+                                           uint64_t uniqueCount, uint64_t originalLength,
+                                           HuffmanLengthTable &table)
+    {
+        if (uniqueCount > 256)
+            return errorResult(MessageId::CodecUniqueCountTooLarge);
+        if ((originalLength == 0) != (uniqueCount == 0))
+            return errorResult(MessageId::CodecInvalidCodeTable);
+
+        int previousSymbol = -1;
+        for (uint64_t i = 0; i < uniqueCount; ++i)
+        {
+            const int nextSymbol = in.get();
+            const int nextLength = in.get();
+            if (nextSymbol == std::char_traits<char>::eof() ||
+                nextLength == std::char_traits<char>::eof())
+                return errorResult(MessageId::CodecFrequencyTableShort);
+
+            const int symbol = static_cast<unsigned char>(nextSymbol);
+            const int length = static_cast<unsigned char>(nextLength);
+            if (symbol <= previousSymbol)
+                return errorResult(MessageId::CodecFrequencyOrder);
+            if (length == 0 || length > 32)
+                return errorResult(MessageId::CodecInvalidCodeTable);
+            table.lengths[symbol] = static_cast<std::uint8_t>(length);
+            previousSymbol = symbol;
+        }
+
+        if (!buildCanonicalCodes(table.lengths, table.codes))
+            return errorResult(MessageId::CodecInvalidCodeTable);
+        table.dataOffset = in.tellg();
+        if (table.dataOffset < 0)
+            return errorResult(MessageId::CodecFrequencyTableShort);
+        const uint64_t position = static_cast<uint64_t>(table.dataOffset);
+        if (position > fileSize)
+            return errorResult(MessageId::CodecFrequencyTableShort);
         return successResult();
     }
 
@@ -257,6 +291,43 @@ namespace
         return flatNodes;
     }
 
+    bool buildCanonicalDecodeTree(const std::vector<CanonicalCode> &codes,
+                                  std::vector<FlatNode> &flatNodes)
+    {
+        const std::size_t noChild = std::numeric_limits<std::size_t>::max();
+        flatNodes.clear();
+        flatNodes.push_back({});
+        for (const CanonicalCode &code : codes)
+        {
+            std::size_t nodeIndex = 0;
+            for (int bitIndex = static_cast<int>(code.length) - 1; bitIndex >= 0; --bitIndex)
+            {
+                const bool right = ((code.bits >> bitIndex) & 1U) != 0;
+                std::size_t child = right ? flatNodes[nodeIndex].right : flatNodes[nodeIndex].left;
+                const bool lastBit = bitIndex == 0;
+                if (child == noChild)
+                {
+                    child = flatNodes.size();
+                    if (right)
+                        flatNodes[nodeIndex].right = child;
+                    else
+                        flatNodes[nodeIndex].left = child;
+                    FlatNode node;
+                    node.isLeaf = lastBit;
+                    if (lastBit)
+                        node.symbol = code.symbol;
+                    flatNodes.push_back(node);
+                }
+                else if (lastBit || flatNodes[child].isLeaf)
+                {
+                    return false;
+                }
+                nodeIndex = child;
+            }
+        }
+        return !codes.empty() || flatNodes.size() == 1;
+    }
+
     OperationResult validateHuffmanBitSize(const std::shared_ptr<HuffmanNode> &root,
                                            const uint64_t freq[256], uint64_t originalLength,
                                            uint64_t fileSize, uint64_t dataOffset)
@@ -265,11 +336,11 @@ namespace
         const uint64_t availableBits = remainingBytes * 8;
         uint64_t requiredBits = 0;
         if (!computeRequiredBits(root, freq, originalLength, requiredBits))
-            return errorResult("Kich thuoc du lieu bit khong hop le");
+            return errorResult(MessageId::CodecInvalidBitSize);
         if (requiredBits > availableBits)
-            return errorResult("Du lieu bit bi thieu");
+            return errorResult(MessageId::CodecBitDataShort);
         if (availableBits - requiredBits >= 8)
-            return errorResult("File nen co du lieu thua o cuoi");
+            return errorResult(MessageId::CodecTrailingData);
         return successResult();
     }
 
@@ -281,7 +352,8 @@ namespace
 
     DecodeResult decodeBits(const std::string &inputBinPath, std::streamoff dataOffset,
                             const std::vector<FlatNode> &flatNodes, uint64_t originalLength,
-                            std::ofstream &out)
+                            std::ofstream &out, const ProgressCallback &progress,
+                            bool canonical, bool validatePadding)
     {
         try
         {
@@ -289,6 +361,7 @@ namespace
             std::vector<char> buffer;
             buffer.reserve(IO_CHUNK_SIZE);
             uint32_t crcState = crc32Begin();
+            uint64_t processed = 0;
 
             auto flushBuffer = [&]() -> bool
             {
@@ -307,8 +380,9 @@ namespace
                 if (flatNodes[nodeIndex].isLeaf)
                 {
                     // Chỉ có một symbol: mỗi symbol tốn đúng 1 bit (mã "0").
-                    if (bitReader.readBit() == -1)
-                        return {errorResult("Du lieu bit khong hop le hoac bi thieu"), 0};
+                    const int bit = bitReader.readBit();
+                    if (bit == -1 || (canonical && bit != 0))
+                        return {errorResult(MessageId::CodecInvalidBitData), 0};
                 }
                 else
                 {
@@ -316,32 +390,54 @@ namespace
                     {
                         const int bit = bitReader.readBit();
                         if (bit == -1)
-                            return {errorResult("Du lieu bit khong hop le hoac bi thieu"), 0};
+                            return {errorResult(MessageId::CodecInvalidBitData), 0};
                         nodeIndex = bit == 0 ? flatNodes[nodeIndex].left : flatNodes[nodeIndex].right;
                         if (nodeIndex == noChild)
-                            return {errorResult("Du lieu bit khong hop le hoac bi thieu"), 0};
+                            return {errorResult(MessageId::CodecInvalidBitData), 0};
                     }
                 }
 
                 buffer.push_back(static_cast<char>(flatNodes[nodeIndex].symbol));
-                if (buffer.size() == IO_CHUNK_SIZE && !flushBuffer())
-                    return {errorResult("Du lieu bit khong hop le hoac bi thieu"), 0};
+                if (buffer.size() == IO_CHUNK_SIZE)
+                {
+                    if (!flushBuffer())
+                        return {errorResult(MessageId::CodecWriteOutput), 0};
+                    processed += buffer.capacity();
+                    if (progress)
+                        progress(processed, originalLength);
+                }
             }
+            const std::size_t remaining = buffer.size();
             if (!flushBuffer())
-                return {errorResult("Du lieu bit khong hop le hoac bi thieu"), 0};
+                return {errorResult(MessageId::CodecWriteOutput), 0};
+            processed += remaining;
+            if (progress && remaining > 0)
+                progress(processed, originalLength);
+
+            if (validatePadding)
+            {
+                unsigned int paddingBits = 0;
+                int bit = 0;
+                while ((bit = bitReader.readBit()) != -1)
+                {
+                    ++paddingBits;
+                    if (paddingBits > 7 || bit != 0)
+                        return {errorResult(MessageId::CodecTrailingData), 0};
+                }
+            }
 
             return {successResult(), crc32Finalize(crcState)};
         }
         catch (const std::exception &ex)
         {
-            return {errorResult(ex.what()), 0};
+            return {errorResult(MessageId::CodecInternalFailure, ex.what()), 0};
         }
     }
 
     OperationResult validateCrc(uint32_t actualCrc, uint32_t expectedCrc, bool hasCrc)
     {
         if (hasCrc && actualCrc != expectedCrc)
-            return errorResult("CRC32 khong khop: du lieu goc bi hong");
+            return errorResult(MessageId::CodecChecksumMismatch);
         return successResult();
     }
 
@@ -350,11 +446,11 @@ namespace
         OutputGuard outputGuard(outputTxtPath);
         std::ofstream emptyOut(toPath(outputTxtPath), std::ios::binary);
         if (!emptyOut.is_open())
-            return errorResult("Khong tao duoc file giai nen");
+            return errorResult(MessageId::CodecCreateOutput);
         outputGuard.arm();
         emptyOut.close();
         if (emptyOut.fail())
-            return {false, {}};
+            return errorResult(MessageId::CodecWriteOutput);
         outputGuard.commit();
         return successResult();
     }
@@ -364,17 +460,18 @@ namespace
                                         const HuffmanFrequencyTable &table,
                                         const std::shared_ptr<HuffmanNode> &root,
                                         uint64_t originalLength, uint32_t expectedCrc,
-                                        bool hasCrc)
+                                        bool hasCrc, const ProgressCallback &progress)
     {
         const std::vector<FlatNode> flatNodes = buildFlatTree(root);
         OutputGuard outputGuard(outputTxtPath);
         std::ofstream out(toPath(outputTxtPath), std::ios::binary);
         if (!out.is_open())
-            return errorResult("Khong tao duoc file giai nen");
+            return errorResult(MessageId::CodecCreateOutput);
         outputGuard.arm();
 
         DecodeResult decoded =
-            decodeBits(inputBinPath, table.dataOffset, flatNodes, originalLength, out);
+            decodeBits(inputBinPath, table.dataOffset, flatNodes, originalLength, out, progress,
+                       false, false);
         if (!decoded.result.success)
         {
             out.close();
@@ -383,7 +480,7 @@ namespace
 
         out.close();
         if (out.fail())
-            return {false, {}};
+            return errorResult(MessageId::CodecWriteOutput);
 
         const OperationResult crcResult = validateCrc(decoded.crc, expectedCrc, hasCrc);
         if (!crcResult.success)
@@ -393,11 +490,66 @@ namespace
         return successResult();
     }
 
+    OperationResult decodeCanonicalHuffmanOutput(const std::string &inputBinPath,
+                                                 const std::string &outputTxtPath,
+                                                 const HuffmanLengthTable &table,
+                                                 uint64_t originalLength,
+                                                 uint32_t expectedCrc,
+                                                 const ProgressCallback &progress)
+    {
+        std::vector<FlatNode> flatNodes;
+        if (!buildCanonicalDecodeTree(table.codes, flatNodes))
+            return errorResult(MessageId::CodecInvalidCodeTable);
+
+        OutputGuard outputGuard(outputTxtPath);
+        std::ofstream out(toPath(outputTxtPath), std::ios::binary);
+        if (!out.is_open())
+            return errorResult(MessageId::CodecCreateOutput);
+        outputGuard.arm();
+
+        DecodeResult decoded =
+            decodeBits(inputBinPath, table.dataOffset, flatNodes, originalLength,
+                       out, progress, true, true);
+        if (!decoded.result.success)
+        {
+            out.close();
+            return decoded.result;
+        }
+
+        out.close();
+        if (out.fail())
+            return errorResult(MessageId::CodecWriteOutput);
+        const OperationResult crcResult =
+            validateCrc(decoded.crc, expectedCrc, true);
+        if (!crcResult.success)
+            return crcResult;
+
+        outputGuard.commit();
+        return successResult();
+    }
+
+    OperationResult decompressHuf3(const std::string &inputBinPath,
+                                   const std::string &outputTxtPath,
+                                   std::ifstream &in, uint64_t fileSize,
+                                   uint64_t uniqueCount, uint64_t originalLength,
+                                   uint32_t expectedCrc, const ProgressCallback &progress)
+    {
+        HuffmanLengthTable table;
+        const OperationResult tableResult =
+            readHuffmanLengthTable(in, fileSize, uniqueCount, originalLength, table);
+        if (!tableResult.success)
+            return tableResult;
+        in.close();
+        return decodeCanonicalHuffmanOutput(inputBinPath, outputTxtPath, table,
+                                            originalLength, expectedCrc, progress);
+    }
+
     // Giải nén mode HUFFMAN (dùng cho cả HUF1 và HUF2).
     OperationResult decompressHuffman(const std::string &inputBinPath,
                                       const std::string &outputTxtPath, std::ifstream &in,
                                       uint64_t fileSize, uint64_t uniqueCount,
-                                      uint64_t originalLength, bool hasCrc, uint32_t expectedCrc)
+                                      uint64_t originalLength, bool hasCrc, uint32_t expectedCrc,
+                                      const ProgressCallback &progress)
     {
         HuffmanFrequencyTable table;
         OperationResult result = readHuffmanFrequencyTable(
@@ -418,7 +570,7 @@ namespace
         const std::shared_ptr<HuffmanNode> root =
             buildHuffmanTree(table.frequencies, totalSymbols);
         if (!root)
-            return errorResult("Khong dung duoc cay Huffman");
+            return errorResult(MessageId::CodecInvalidTree);
 
         result = validateHuffmanBitSize(root, table.frequencies, originalLength, fileSize,
                                         static_cast<uint64_t>(table.dataOffset));
@@ -426,51 +578,56 @@ namespace
             return result;
 
         return decodeHuffmanOutput(inputBinPath, outputTxtPath, table, root, originalLength,
-                                   expectedCrc, hasCrc);
+                                   expectedCrc, hasCrc, progress);
     }
 
-    // Giải mã mode STORED (chỉ HUF2): dữ liệu gốc nằm nguyên vẹn ngay sau header 17 byte.
-    bool decompressStored(const std::string &outputTxtPath, std::ifstream &in, uint64_t fileSize,
-                          uint64_t originalLength, uint32_t expectedCrc)
+    // Giải mã mode STORED (HUF2/HUF3): dữ liệu gốc nằm ngay sau header 17 byte.
+    OperationResult decompressStored(const std::string &outputTxtPath, std::ifstream &in,
+                                     uint64_t fileSize, uint64_t originalLength,
+                                     uint32_t expectedCrc, const ProgressCallback &progress)
     {
         if (fileSize < HEADER_SIZE)
-            return fail("Header bi thieu du lieu");
+            return errorResult(MessageId::CodecHeaderShort);
         const uint64_t remaining = fileSize - HEADER_SIZE;
         if (remaining < originalLength)
-            return fail("Du lieu STORED bi thieu");
+            return errorResult(MessageId::CodecStoredDataShort);
         if (remaining > originalLength)
-            return fail("File nen co du lieu thua o cuoi");
+            return errorResult(MessageId::CodecTrailingData);
 
         OutputGuard outputGuard(outputTxtPath);
         std::ofstream out(toPath(outputTxtPath), std::ios::binary);
         if (!out.is_open())
-            return fail("Khong tao duoc file giai nen");
+            return errorResult(MessageId::CodecCreateOutput);
         outputGuard.arm();
 
         // Ghi theo khối 64 KB, tính CRC trên đúng các byte đọc được rồi ghi ra.
         std::vector<char> buffer(IO_CHUNK_SIZE);
         uint32_t crcState = crc32Begin();
         uint64_t left = originalLength;
+        uint64_t processed = 0;
         while (left > 0)
         {
             const uint64_t step =
                 left < IO_CHUNK_SIZE ? left : static_cast<uint64_t>(IO_CHUNK_SIZE);
             if (!readWithCrc(in, buffer, step, crcState))
-                return fail("Du lieu STORED bi thieu");
+                return errorResult(MessageId::CodecStoredDataShort);
             out.write(buffer.data(), static_cast<std::streamsize>(step));
             if (out.fail())
-                return fail("Khong ghi duoc file giai nen");
+                return errorResult(MessageId::CodecWriteOutput);
+            processed += step;
+            if (progress)
+                progress(processed, originalLength);
             left -= step;
         }
 
         out.close();
         in.close();
         if (out.fail())
-            return false;
+            return errorResult(MessageId::CodecWriteOutput);
         if (crc32Finalize(crcState) != expectedCrc)
-            return fail("CRC32 khong khop: du lieu goc bi hong");
+            return errorResult(MessageId::CodecChecksumMismatch);
         outputGuard.commit();
-        return true;
+        return successResult();
     }
 
     struct InputHeader
@@ -485,35 +642,35 @@ namespace
     OperationResult readInputHeader(std::ifstream &in, uint64_t fileSize, InputHeader &header)
     {
         if (fileSize < MAGIC_SIZE)
-            return errorResult("Header bi thieu du lieu");
+            return errorResult(MessageId::CodecHeaderShort);
         char magic[MAGIC_SIZE] = {};
         if (!in.read(magic, MAGIC_SIZE))
-            return errorResult("Header bi thieu du lieu");
+            return errorResult(MessageId::CodecHeaderShort);
 
         header.version = detectFormatVersion(magic);
-        if (header.version == 2)
+        if (header.version == 2 || header.version == 3)
         {
             if (fileSize < HEADER_SIZE)
-                return errorResult("Header bi thieu du lieu");
+                return errorResult(MessageId::CodecHeaderShort);
 
             std::array<uint8_t, HEADER_SIZE> bytes{};
             std::memcpy(bytes.data(), magic, MAGIC_SIZE);
             if (!in.read(reinterpret_cast<char *>(bytes.data() + MAGIC_SIZE),
                          static_cast<std::streamsize>(HEADER_SIZE - MAGIC_SIZE)))
-                return errorResult("Header bi thieu du lieu");
+                return errorResult(MessageId::CodecHeaderShort);
 
             header.mode = bytes[4];
             header.originalLength = readLittleEndian(bytes.data() + 5, 8);
             header.expectedCrc =
                 static_cast<uint32_t>(readLittleEndian(bytes.data() + 13, 4));
             if (header.mode != MODE_HUFFMAN && header.mode != MODE_STORED)
-                return errorResult("Mode khong hop le (chi nhan 0 = Huffman, 1 = STORED)");
+                return errorResult(MessageId::CodecInvalidMode);
 
             std::array<uint8_t, 2> countBytes{};
             if (header.mode == MODE_HUFFMAN)
             {
                 if (!in.read(reinterpret_cast<char *>(countBytes.data()), 2))
-                    return errorResult("Header bi thieu du lieu");
+                    return errorResult(MessageId::CodecHeaderShort);
                 header.uniqueCount = readLittleEndian(countBytes.data(), 2);
             }
             return successResult();
@@ -523,36 +680,63 @@ namespace
         {
             constexpr uint64_t HUF1_HEADER = 4 + 2 + 8;
             if (fileSize < HUF1_HEADER)
-                return errorResult("Header bi thieu du lieu");
+                return errorResult(MessageId::CodecHeaderShort);
             std::array<uint8_t, 2> countBytes{};
             std::array<uint8_t, 8> lengthBytes{};
             if (!in.read(reinterpret_cast<char *>(countBytes.data()), 2) ||
                 !in.read(reinterpret_cast<char *>(lengthBytes.data()), 8))
-                return errorResult("Header bi thieu du lieu");
+                return errorResult(MessageId::CodecHeaderShort);
             header.uniqueCount = readLittleEndian(countBytes.data(), 2);
             if (header.uniqueCount > 256)
-                return errorResult("uniqueCount vuot qua 256");
+                return errorResult(MessageId::CodecUniqueCountTooLarge);
             header.originalLength = readLittleEndian(lengthBytes.data(), 8);
             return successResult();
         }
 
-        return errorResult("File khong dung dinh dang HUF2 (magic khong hop le)");
+        return errorResult(MessageId::CodecUnknownFormat);
     }
 
 } // namespace
 
 bool Decompressor::decompress(const std::string &inputBinPath, const std::string &outputTxtPath)
 {
+    return decompressWithProgress(inputBinPath, outputTxtPath, {});
+}
+
+bool Decompressor::decompressWithProgress(const std::string &inputBinPath,
+                                         const std::string &outputTxtPath,
+                                         const ProgressCallback &progress)
+{
+    lastError_ = MessageId::None;
+    lastErrorDetails_.clear();
+    const auto report = [this](const OperationResult &result)
+    {
+        if (result.success)
+            return true;
+        lastError_ = result.error == MessageId::None ? MessageId::CodecInternalFailure : result.error;
+        lastErrorDetails_ = result.details;
+        if (!lastErrorDetails_.empty() && lastErrorDetails_.compare(0, 2, ": ") != 0)
+            lastErrorDetails_.insert(0, ": ");
+        return false;
+    };
     std::ifstream in(toPath(inputBinPath), std::ios::binary);
     if (!in.is_open())
-        return fail("Khong mo duoc file nen");
+    {
+        lastError_ = MessageId::CodecReadArchive;
+        lastErrorDetails_ = ": " + inputBinPath;
+        return false;
+    }
 
     std::error_code ec;
     if (areSameExistingFile(toPath(inputBinPath), toPath(outputTxtPath), ec))
-        return fail("File nen va file dich khong duoc trung nhau");
+    {
+        lastError_ = MessageId::CodecSameSourceDestination;
+        return false;
+    }
     if (ec)
     {
-        std::cerr << "Loi: Khong kiem tra duoc file dich: " << ec.message() << "\n";
+        lastError_ = MessageId::CodecCheckDestination;
+        lastErrorDetails_ = ": " + ec.message();
         return false;
     }
 
@@ -561,22 +745,37 @@ bool Decompressor::decompress(const std::string &inputBinPath, const std::string
     in.seekg(0, std::ios::end);
     const std::streamoff fileSizeRaw = in.tellg();
     if (!in || fileSizeRaw < 0)
-        return fail("Khong xac dinh duoc kich thuoc file nen");
+    {
+        lastError_ = MessageId::CodecFileSizeUnknown;
+        return false;
+    }
     const uint64_t fileSize = static_cast<uint64_t>(fileSizeRaw);
     in.seekg(0, std::ios::beg);
     if (!in)
-        return fail("Khong doc duoc file nen");
+    {
+        lastError_ = MessageId::CodecReadArchive;
+        return false;
+    }
 
     InputHeader header;
     const OperationResult headerResult = readInputHeader(in, fileSize, header);
-    if (!reportResult(headerResult))
+    if (!report(headerResult))
         return false;
+    const ProgressCallback activeProgress =
+        header.originalLength > 10ULL * 1024ULL * 1024ULL ? progress : ProgressCallback{};
 
     if (header.version == 2 && header.mode == MODE_STORED)
-        return decompressStored(outputTxtPath, in, fileSize, header.originalLength,
-                                header.expectedCrc);
+        return report(decompressStored(outputTxtPath, in, fileSize, header.originalLength,
+                                       header.expectedCrc, activeProgress));
+    if (header.version == 3 && header.mode == MODE_STORED)
+        return report(decompressStored(outputTxtPath, in, fileSize, header.originalLength,
+                                       header.expectedCrc, activeProgress));
+    if (header.version == 3)
+        return report(decompressHuf3(inputBinPath, outputTxtPath, in, fileSize,
+                                     header.uniqueCount, header.originalLength,
+                                     header.expectedCrc, activeProgress));
 
-    return reportResult(decompressHuffman(
+    return report(decompressHuffman(
         inputBinPath, outputTxtPath, in, fileSize, header.uniqueCount,
-        header.originalLength, header.version == 2, header.expectedCrc));
+        header.originalLength, header.version == 2, header.expectedCrc, activeProgress));
 }
