@@ -1,4 +1,4 @@
-﻿#include <cstdint>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -6,8 +6,8 @@
 #include <string>
 #include <vector>
 
-#include "CompressionStats.h"
-#include "CompressionVerifier.h"
+#include "compressionStats.h"
+#include "compressionVerifier.h"
 #include "compressor.h"
 #include "decompressor.h"
 

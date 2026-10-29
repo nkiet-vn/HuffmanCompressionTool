@@ -1,4 +1,4 @@
-#include "CompressionStats.h"
+#include "compressionStats.h"
 #include "pathUtil.h"
 
 #include <filesystem>

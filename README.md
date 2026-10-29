@@ -21,11 +21,11 @@ HuffmanCompressionTool/
 │   ├── minHeap.h               # Min-Heap tự viết, chứa HuffmanNode (khóa: freq, minSymbol)
 │   ├── compressor.h            # Class nén
 │   ├── decompressor.h          # Class giải nén
-│   ├── CompressionStats.h      # Thống kê tỷ lệ nén
-│   ├── CompressionVerifier.h   # Xác minh round-trip
-│   ├── FileHasher.h            # Tính hash SHA-256 của file
+│   ├── compressionStats.h      # Thống kê tỷ lệ nén
+│   ├── compressionVerifier.h   # Xác minh round-trip
+│   ├── fileHasher.h            # Tính hash SHA-256 của file
 │   ├── sha256.h                # Thuật toán SHA-256
-│   ├── ICodec.h                # Interface nén/giải nén
+│   ├── iCodec.h                # Interface nén/giải nén
 │   ├── consoleUI.h             # Tầng hiển thị CLI (banner, menu, bảng, prompt)
 │   └── menuController.h        # Tầng điều phối menu (không đụng cin/cout)
 ├── src/
@@ -36,10 +36,10 @@ HuffmanCompressionTool/
 │   ├── compressor.cpp          # Logic nén (ghi qua file tạm rồi đổi tên)
 │   ├── decompressor.cpp        # Logic giải nén (dùng BitReader)
 │   ├── bitReader.cpp           # Đọc bit từ file
-│   ├── CompressionStats.cpp    # Tính toán thống kê
-│   ├── CompressionVerifier.cpp # Xác minh toàn vẹn
-│   ├── FileHasher.cpp          # Hash file
-│   └── Sha256.cpp              # Triển khai SHA-256
+│   ├── compressionStats.cpp    # Tính toán thống kê
+│   ├── compressionVerifier.cpp # Xác minh toàn vẹn
+│   ├── fileHasher.cpp          # Hash file
+│   └── sha256.cpp              # Triển khai SHA-256
 └── tests/
     ├── test_huffmanTree.cpp
     ├── test_bitReader.cpp

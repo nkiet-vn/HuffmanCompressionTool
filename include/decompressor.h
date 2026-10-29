@@ -1,8 +1,8 @@
-﻿#ifndef DECOMPRESSOR_H
+#ifndef DECOMPRESSOR_H
 #define DECOMPRESSOR_H
 
 #include <string>
-#include "ICodec.h"
+#include "iCodec.h"
 
 // Giải nén file .bin (định dạng HUF1, xem docs/fileFormat.md).
 class Decompressor : public IDecompressor {

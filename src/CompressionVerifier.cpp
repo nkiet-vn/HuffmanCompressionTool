@@ -1,6 +1,6 @@
-#include "CompressionVerifier.h"
+#include "compressionVerifier.h"
 
-#include "FileHasher.h"
+#include "fileHasher.h"
 
 CompressionVerifier::CompressionVerifier(ICompressor& compressor,
                                          IDecompressor& decompressor)

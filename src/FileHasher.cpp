@@ -1,4 +1,4 @@
-#include "FileHasher.h"
+#include "fileHasher.h"
 #include "pathUtil.h"
 
 #include <cstdint>

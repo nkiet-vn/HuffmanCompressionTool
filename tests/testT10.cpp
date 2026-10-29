@@ -1,14 +1,14 @@
-﻿#include <cmath>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 
-#include "CompressionStats.h"
-#include "CompressionVerifier.h"
-#include "FileHasher.h"
-#include "ICodec.h"
+#include "compressionStats.h"
+#include "compressionVerifier.h"
+#include "fileHasher.h"
+#include "iCodec.h"
 #include "sha256.h"
 
 namespace fs = std::filesystem;

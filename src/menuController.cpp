@@ -1,12 +1,12 @@
-﻿#include "menuController.h"
+#include "menuController.h"
 #include "pathUtil.h"
 
 #include <filesystem>
 #include <fstream>
 #include <system_error>
 
-#include "CompressionStats.h"
-#include "FileHasher.h"
+#include "compressionStats.h"
+#include "fileHasher.h"
 #include "compressor.h"
 #include "decompressor.h"
 

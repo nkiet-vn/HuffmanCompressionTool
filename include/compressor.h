@@ -1,8 +1,8 @@
-﻿#ifndef COMPRESSOR_H
+#ifndef COMPRESSOR_H
 #define COMPRESSOR_H
 
 #include <string>
-#include "ICodec.h"
+#include "iCodec.h"
 
 // Nén file thành định dạng HUF1 (xem docs/fileFormat.md).
 class Compressor : public ICompressor {

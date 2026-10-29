@@ -4,8 +4,8 @@
 #include <ostream>
 #include <string>
 
-#include "CompressionStats.h"
-#include "ICodec.h"
+#include "compressionStats.h"
+#include "iCodec.h"
 
 struct VerificationResult {
     bool compressOk = false;

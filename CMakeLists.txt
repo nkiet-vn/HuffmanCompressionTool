@@ -27,10 +27,10 @@ add_library(huffman_core
 )
 
 add_library(t10Core STATIC
-    src/Sha256.cpp
-    src/FileHasher.cpp
-    src/CompressionStats.cpp
-    src/CompressionVerifier.cpp
+    src/sha256.cpp
+    src/fileHasher.cpp
+    src/compressionStats.cpp
+    src/compressionVerifier.cpp
 )
 
 target_include_directories(t10Core PUBLIC
