@@ -304,6 +304,50 @@ static void testHuf1BackwardCompatibility()
     std::remove(dst.c_str());
 }
 
+static void testSourceDestinationSafety()
+{
+    std::cout << "[HUF2] Bao ve file nguon va file nen\n";
+    const std::string output = "safety_output.bin";
+    const std::string collidingSource = output + ".tmp";
+    const std::string reservedOutput = "safety_reserved.bin";
+    const std::string reservedTemp = reservedOutput + ".tmp";
+    const std::string reservedSource = "safety_reserved_source.txt";
+    const std::string compressed = "safety_compressed.bin";
+    const std::string content = std::string(5000, 'x');
+
+    writeFile(collidingSource, content);
+    CHECK(!Compressor().compress(collidingSource, output),
+          "file nguon trung voi file tam: le ra phai bao loi");
+    CHECK(bytesToString(readBytes(collidingSource)) == content,
+          "file nguon trung voi file tam: noi dung nguon bi thay doi");
+    CHECK(!fs::exists(output), "file nguon trung voi file tam: khong duoc tao file dich");
+
+    writeFile(reservedSource, content);
+    writeFile(reservedTemp, "keep existing temp file");
+    CHECK(!Compressor().compress(reservedSource, reservedOutput),
+          "file tam da ton tai: le ra phai bao loi");
+    CHECK(bytesToString(readBytes(reservedTemp)) == "keep existing temp file",
+          "file tam da ton tai: noi dung bi ghi de");
+    CHECK(!fs::exists(reservedOutput), "file tam da ton tai: khong duoc tao file dich");
+
+    const std::string original = "safety_original.txt";
+    writeFile(original, content);
+    CHECK(Compressor().compress(original, compressed), "safety: nen that bai");
+    const Bytes before = readBytes(compressed);
+    CHECK(!Decompressor().decompress(compressed, compressed),
+          "file nen va file giai nen trung nhau: le ra phai bao loi");
+    CHECK(readBytes(compressed) == before,
+          "file nen va file giai nen trung nhau: file nen bi thay doi");
+
+    std::remove(collidingSource.c_str());
+    std::remove(output.c_str());
+    std::remove(reservedTemp.c_str());
+    std::remove(reservedOutput.c_str());
+    std::remove(reservedSource.c_str());
+    std::remove(compressed.c_str());
+    std::remove(original.c_str());
+}
+
 // (6) Fuzz: 500 lần đột biến ngẫu nhiên, không crash / không treo / không chấp nhận dữ liệu khác gốc.
 static void testFuzz()
 {
@@ -419,6 +463,7 @@ int main()
     testRoundTripAndSizeBound();
     testCorruptionDetected();
     testHuf1BackwardCompatibility();
+    testSourceDestinationSafety();
     testFuzz();
 
     if (gFailures == 0)

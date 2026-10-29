@@ -109,18 +109,22 @@ bool Compressor::compress(const std::string &inputPath, const std::string &outpu
     namespace fs = std::filesystem;
     std::error_code ec;
 
-    // Kiểm tra trùng file bằng filesystem::equivalent
-    if (fs::exists(toPath(inputPath), ec) && fs::exists(toPath(outputBinPath), ec) &&
-        fs::equivalent(toPath(inputPath), toPath(outputBinPath), ec))
-    {
-        std::cerr << "Loi: file nguon va file dich khong duoc trung nhau!\n";
-        return false;
-    }
-
     std::ifstream in(toPath(inputPath), std::ios::binary);
     if (!in.is_open())
     {
         std::cerr << "Loi: Khong mo duoc file nguon " << inputPath << "\n";
+        return false;
+    }
+
+    // Kiểm tra trùng file bằng filesystem::equivalent, kể cả hard link và symlink.
+    if (areSameExistingFile(toPath(inputPath), toPath(outputBinPath), ec))
+    {
+        std::cerr << "Loi: file nguon va file dich khong duoc trung nhau!\n";
+        return false;
+    }
+    if (ec)
+    {
+        std::cerr << "Loi: Khong kiem tra duoc file dich: " << ec.message() << "\n";
         return false;
     }
 
@@ -144,6 +148,27 @@ bool Compressor::compress(const std::string &inputPath, const std::string &outpu
 
     // Ghi ra file tạm để không đụng vào file đích cho tới khi thành công.
     std::string tempPath = outputBinPath + ".tmp";
+    if (areSameExistingFile(toPath(inputPath), toPath(tempPath), ec))
+    {
+        std::cerr << "Loi: file tam khong duoc trung voi file nguon!\n";
+        return false;
+    }
+    if (ec)
+    {
+        std::cerr << "Loi: Khong kiem tra duoc file tam: " << ec.message() << "\n";
+        return false;
+    }
+    if (fs::exists(toPath(tempPath), ec))
+    {
+        std::cerr << "Loi: File tam da ton tai, khong ghi de " << tempPath << "\n";
+        return false;
+    }
+    if (ec)
+    {
+        std::cerr << "Loi: Khong kiem tra duoc file tam: " << ec.message() << "\n";
+        return false;
+    }
+
     std::ofstream out(toPath(tempPath), std::ios::binary);
     if (!out.is_open())
     {

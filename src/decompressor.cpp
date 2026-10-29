@@ -387,6 +387,15 @@ bool Decompressor::decompress(const std::string &inputBinPath, const std::string
     if (!in.is_open())
         return fail("Khong mo duoc file nen");
 
+    std::error_code ec;
+    if (areSameExistingFile(toPath(inputBinPath), toPath(outputTxtPath), ec))
+        return fail("File nen va file dich khong duoc trung nhau");
+    if (ec)
+    {
+        std::cerr << "Loi: Khong kiem tra duoc file dich: " << ec.message() << "\n";
+        return false;
+    }
+
     // Chỉ đọc header + bảng tần suất vào RAM (tối đa vài KB).
     // Phần dữ liệu được đọc dần theo khối 64 KB, nên bộ nhớ không phụ thuộc kích thước file.
     in.seekg(0, std::ios::end);

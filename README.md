@@ -162,6 +162,7 @@ Tham số sai (chế độ không hợp lệ, thiếu đối số) luôn báo l�
 - **Thống kê tỷ lệ nén** hiển thị ngay trên CLI.
 - **An toàn dữ liệu**: từ chối nén khi nguồn đích trùng nhau (kiểm tra bằng
   `std::filesystem::equivalent`, kể cả khi đường dẫn viết khác nhau); ghi ra file tạm rồi đổi tên;
+  từ chối giải nén đè lên chính file nén, bảo vệ nguồn và file tạm đã tồn tại;
   xóa file đích dở dang khi giải nén lỗi.
 - **Kiểm tra chặt khi giải nén**: đối chiếu số bit cần thiết với số bit có sẵn, từ chối dữ liệu
   thừa ở cuối file và dữ liệu bị cắt.
@@ -197,7 +198,7 @@ mode STORED — vẫn đọc được nhưng không ghi nữa.
 | `huffmanCore` | Thứ tự heap, tie-break, prefix-free, cây 1 ký tự |
 | `roundtrip` | Nén rồi giải nén, so sánh từng byte; từ chối header hỏng HUF1/HUF2 |
 | `compress` | Khớp đặc tả HUF2 (ví dụ `"aab"`), bố cục HUFFMAN, file rỗng, file nhỏ không phình |
-| `huf2` | Round-trip 7 loại file, giới hạn `nén <= gốc + 17`, lỗi CRC khi sửa bit, header hỏng, HUF1 cũ, fuzz 500 lần |
+| `huf2` | Round-trip 7 loại file, giới hạn `nén <= gốc + 17`, lỗi CRC khi sửa bit, header hỏng, HUF1 cũ, bảo vệ file nguồn/đích, fuzz 500 lần |
 | `menu` | ConsoleUI (trim, EOF, bảng, tag thông báo) + luồng menu nén/giải nén/xác minh/thông tin |
 | `testT10` | SHA-256, thống kê, xác minh |
 | `verify_samples` | Kiểm thử tổng hợp với file mẫu |
