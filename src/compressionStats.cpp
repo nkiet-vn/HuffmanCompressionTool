@@ -1,6 +1,7 @@
 #include "compressionStats.h"
 #include "pathUtil.h"
 
+#include <cmath>
 #include <filesystem>
 #include <iomanip>
 #include <sstream>
@@ -46,7 +47,18 @@ std::string formatCompressionRatio(const std::optional<double>& ratioPercent) {
         return "N/A";
     }
     std::ostringstream stream;
-    stream << std::fixed << std::setprecision(2) << *ratioPercent << "%";
+    const double ratio = *ratioPercent;
+    int precision = 2;
+    if (std::abs(ratio) < 0.005) {
+        if (ratio >= 0.0) {
+            return "0.00%";
+        }
+        precision = static_cast<int>(std::ceil(-std::log10(std::abs(ratio))));
+        if (precision < 2) {
+            precision = 2;
+        }
+    }
+    stream << std::fixed << std::setprecision(precision) << ratio << "%";
     return stream.str();
 }
 

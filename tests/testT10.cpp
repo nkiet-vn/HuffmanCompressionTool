@@ -89,6 +89,9 @@ static void testCompressionRatio() {
 
     CHECK(formatCompressionRatio(calculateCompressionRatio(1000, 600)) == "40.00%");
     CHECK(formatCompressionRatio(calculateCompressionRatio(3, 2)) == "33.33%");
+    CHECK(formatCompressionRatio(calculateCompressionRatio(1000, 1000)) == "0.00%");
+    CHECK(formatCompressionRatio(calculateCompressionRatio(1000000, 999999)) == "0.00%");
+    CHECK(formatCompressionRatio(calculateCompressionRatio(5000000, 5000017)) == "-0.0003%");
     CHECK(formatCompressionRatio(std::nullopt) == "N/A");
 }
 

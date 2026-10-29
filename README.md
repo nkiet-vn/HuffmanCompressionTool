@@ -29,7 +29,8 @@ HuffmanCompressionTool/
 │   ├── sha256.h                # Thuật toán SHA-256
 │   ├── iCodec.h                # Interface nén/giải nén
 │   ├── consoleUI.h             # Tầng hiển thị CLI (banner, menu, bảng, prompt)
-│   └── menuController.h        # Tầng điều phối menu (không đụng cin/cout)
+│   ├── menuController.h        # Tầng điều phối menu (không đụng cin/cout)
+│   └── pathUtil.h              # chuyển đường dẫn UTF-8 sang kiểu hệ điều hành (toPath())
 ├── src/
 │   ├── main.cpp                # Điểm vào chương trình (chỉ parse tham số)
 │   ├── consoleUI.cpp           # Triển khai tầng hiển thị
@@ -44,6 +45,7 @@ HuffmanCompressionTool/
 │   ├── compressionVerifier.cpp # Xác minh toàn vẹn
 │   ├── fileHasher.cpp          # Hash file
 │   └── sha256.cpp              # Triển khai SHA-256
+├── file_mau_txt/               # Tệp mẫu dùng cho kiểm thử thủ công / verify_samples
 └── tests/
     ├── test_huffmanTree.cpp
     ├── test_bitReader.cpp
@@ -55,6 +57,7 @@ HuffmanCompressionTool/
     ├── test_huffmancore.cpp
     ├── testT10.cpp
     ├── test_huf2.cpp           # HUF2: round-trip, giới hạn kích thước, CRC, HUF1 cũ, fuzz
+    ├── test_output_guard.cpp   # Xóa file đích dở dang khi CRC sai / file bị cắt
     └── verify_samples.cpp
 ```
 
@@ -202,6 +205,7 @@ mode STORED — vẫn đọc được nhưng không ghi nữa.
 | `menu` | ConsoleUI (trim, EOF, bảng, tag thông báo) + luồng menu nén/giải nén/xác minh/thông tin |
 | `testT10` | SHA-256, thống kê, xác minh |
 | `verify_samples` | Kiểm thử tổng hợp với file mẫu |
+| `output_guard` | CRC sai và dữ liệu Huffman bị cắt không để lại file đích hoặc file tạm |
 
 Các test dùng `assert` đều có `#undef NDEBUG` nên vẫn kiểm tra thật khi build Release.
 Test chạy trong thư mục build nên không để lại rác ở thư mục gốc.
@@ -235,8 +239,18 @@ Tiêu đề commit bắt đầu bằng mã ticket Jira, theo mẫu `DSA-<số>: 
 
 ## Hiệu năng
 
-- File văn bản 100 MB: nén ~1.7 s, giải nén ~4.8 s
-- File ngẫu nhiên 100 MB: nén ~6.1 s, giải nén ~10.7 s
+Đo bằng bản Release trên Intel Core i5-6440HQ @ 2.60 GHz, Windows 10 Home 22H2
+(build 19045), MinGW-w64 GCC 16.2.0 (MSYS2 UCRT64). Mỗi phép đo là thời gian chạy CLI,
+thực hiện 3 lần trên cùng tệp và lấy trung vị; SHA-256 xác nhận dữ liệu giải nén khớp tệp gốc.
+
+| Dữ liệu | Kích thước đầu vào | Nén (trung vị) | Giải nén (trung vị) |
+|---|---:|---:|---:|
+| Văn bản tiếng Việt lặp đoạn | 99 999 915 byte (~100 MB) | 1.961 s | 9.618 s |
+| Ngẫu nhiên | 100 000 000 byte (100 MB) | 2.094 s | 0.400 s |
+
+Đo riêng hiệu năng giải nén HUFFMAN trên cùng tệp văn bản tiếng Việt 25 999 944 byte (~26 MB),
+3 lần mỗi phiên bản, trung vị: trước refactor **2.931 s**, sau refactor **1.390 s**
+(nhanh hơn khoảng 52.6%). Hai lần đo dùng cùng cấu hình Release và xác nhận SHA-256 sau giải nén.
 
 Giải nén đọc phần header vào RAM rồi dùng `BitReader` đọc phần dữ liệu bit. Cả nén và giải nén xử lý
 theo khối 64 KB (`IO_CHUNK_SIZE`) và tính CRC32 trên luồng dữ liệu, nên bộ nhớ không phụ thuộc kích thước file.

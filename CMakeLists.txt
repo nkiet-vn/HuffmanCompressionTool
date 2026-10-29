@@ -106,3 +106,7 @@ add_test(NAME huffmanCore COMMAND testHuffmanCore WORKING_DIRECTORY ${TEST_WORK_
 add_executable(test_huf2 tests/test_huf2.cpp)
 target_link_libraries(test_huf2 PRIVATE huffman_core)
 add_test(NAME huf2 COMMAND test_huf2 WORKING_DIRECTORY ${TEST_WORK_DIR})
+
+add_executable(test_output_guard tests/test_output_guard.cpp)
+target_link_libraries(test_output_guard PRIVATE huffman_core)
+add_test(NAME output_guard COMMAND test_output_guard WORKING_DIRECTORY ${TEST_WORK_DIR})

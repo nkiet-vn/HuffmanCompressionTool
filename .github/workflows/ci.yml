@@ -18,6 +18,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Bắt lỗi #include / CMakeLists.txt sai hoa thường (Windows/macOS không phát hiện được).
+      # Ép Git coi hoa thường là khác nhau rồi checkout lại để lấy đúng tên trên đĩa.
+      - name: Check file name case (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          git config core.ignorecase false
+          git rm -r --cached . --quiet
+          git reset --hard HEAD
+          # Chỉ file của dự án (src/include/tests) mới bắt buộc camelCase; file mẫu giữ nguyên tên.
+          bad=$(git ls-files -- src include tests | grep -E '\.(h|cpp)$' | grep -vE '^[a-z0-9_/.]+$' || true)
+          if [ -n "$bad" ]; then echo "::error::Tên file phải là camelCase: $bad"; exit 1; fi
+          grep -rhoE '#include "[^"]+"' src include tests | sed -E 's/#include "([^"]+)"/\1/' | sort -u | while read -r h; do
+            if [ ! -f "include/$h" ] && [ ! -f "src/$h" ] && [ ! -f "tests/$h" ]; then
+              echo "::error::Không tìm thấy header '$h' với đúng hoa thường"; exit 1
+            fi
+          done
+          # Mỗi đường dẫn src/*.cpp trong CMakeLists.txt phải tồn tại đúng hoa thường.
+          grep -oE 'src/[A-Za-z0-9_]+\.cpp' CMakeLists.txt | sort -u | while read -r p; do
+            if [ ! -f "$p" ]; then echo "::error::CMakeLists.txt tham chiếu '$p' nhưng không có file"; exit 1; fi
+          done
+
       - name: Configure (Debug)
         run: cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug
 

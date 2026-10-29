@@ -88,6 +88,12 @@ int main(int argc, char** argv) {
     table << "|---|---:|---:|---:|---|---|---|\n";
 
     int failures = 0;
+    if (formatCompressionRatio(calculateCompressionRatio(1000000, 999999)) != "0.00%" ||
+        formatCompressionRatio(calculateCompressionRatio(5000000, 5000017)) != "-0.0003%") {
+        std::cerr << "Loi: formatCompressionRatio lam tron sai gia tri nho\n";
+        ++failures;
+    }
+
     for (const Sample& s : samples) {
         std::ostringstream log;
         VerificationResult r = verifier.verifyRoundTrip(
