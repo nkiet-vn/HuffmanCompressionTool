@@ -1,4 +1,4 @@
-﻿#include "huffmanTree.h"
+#include "huffmanTree.h"
 #include "minHeap.h"
 #include <utility>
 #include <memory>
@@ -24,12 +24,14 @@ static void visitCodes(const std::shared_ptr<HuffmanNode>& node,
     visitCodes(node->right, prefix + '1', codeTable);
 }
 
-std::shared_ptr<HuffmanNode> buildHuffmanTree(const uint64_t freqTable[256], uint64_t& totalSymbols) {
+std::shared_ptr<HuffmanNode> buildHuffmanTree(const uint64_t freqTable[256], uint64_t& totalSymbols, TreeBuildListener* listener) {
     MinHeap minHeap;
     totalSymbols = 0;
     for (int symbol = 0; symbol < 256; ++symbol) {
         if (freqTable[symbol] == 0) continue;
-        minHeap.push(std::make_shared<HuffmanNode>(static_cast<uint8_t>(symbol), freqTable[symbol]));
+        auto leaf = std::make_shared<HuffmanNode>(static_cast<uint8_t>(symbol), freqTable[symbol]);
+        if (listener) listener->onSeed(*leaf);
+        minHeap.push(std::move(leaf));
         totalSymbols += freqTable[symbol];
     }
     if (minHeap.empty()) return nullptr;
@@ -38,8 +40,14 @@ std::shared_ptr<HuffmanNode> buildHuffmanTree(const uint64_t freqTable[256], uin
     while (minHeap.size() > 1) {
         auto left = minHeap.pop();
         auto right = minHeap.pop();
+        if (listener) {
+            listener->onPop(*left, *right);
+            if (left->freq == right->freq) listener->onTieBreak(*left, *right);
+        }
         const uint8_t minSym = left->minSymbol < right->minSymbol ? left->minSymbol : right->minSymbol;
-        minHeap.push(std::make_shared<HuffmanNode>(left->freq + right->freq, minSym, left, right));
+        auto parent = std::make_shared<HuffmanNode>(left->freq + right->freq, minSym, left, right);
+        if (listener) listener->onMerge(*parent);
+        minHeap.push(std::move(parent));
     }
     return minHeap.pop();
 }

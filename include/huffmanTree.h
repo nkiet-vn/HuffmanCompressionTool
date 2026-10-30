@@ -21,9 +21,19 @@ struct HuffmanNode {
                 std::shared_ptr<HuffmanNode> right);
 };
 
+// Optional observation only; the sorting/merging algorithm remains authoritative.
+// All callbacks run synchronously on the caller's thread.
+struct TreeBuildListener {
+    virtual ~TreeBuildListener() = default;
+    virtual void onSeed(const HuffmanNode&) {}
+    virtual void onPop(const HuffmanNode&, const HuffmanNode&) {}
+    virtual void onTieBreak(const HuffmanNode&, const HuffmanNode&) {}
+    virtual void onMerge(const HuffmanNode&) {}
+};
+
 using HuffmanCodeTable = std::array<std::string, 256>;
 
-std::shared_ptr<HuffmanNode> buildHuffmanTree(const uint64_t freqTable[256], uint64_t& totalSymbols);
+std::shared_ptr<HuffmanNode> buildHuffmanTree(const uint64_t freqTable[256], uint64_t& totalSymbols, TreeBuildListener* listener = nullptr);
 void buildCodeTable(const std::shared_ptr<HuffmanNode>& root, HuffmanCodeTable& codeTable);
 
 #endif

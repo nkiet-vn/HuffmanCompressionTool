@@ -14,32 +14,21 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-add_library(huffmanCore
-    src/canonicalHuffman.cpp
-    src/huffmanTree.cpp
-    src/bitReader.cpp
-    src/crc32.cpp
-    src/fileFormat.cpp
-    src/compressor.cpp
-    src/decompressor.cpp
-)
-target_include_directories(huffmanCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_compile_features(huffmanCore PUBLIC cxx_std_17)
-target_link_libraries(huffmanCore PUBLIC
-    $<$<AND:$<CXX_COMPILER_ID:GNU>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,9.0>>:stdc++fs>
-)
-
-add_library(utilCore STATIC
-    src/sha256.cpp
-    src/fileHasher.cpp
-    src/compressionStats.cpp
+add_library(huffman_core STATIC
+    src/canonicalHuffman.cpp src/huffmanTree.cpp src/bitReader.cpp
+    src/crc32.cpp src/fileFormat.cpp src/fileInspector.cpp
+    src/compressor.cpp src/decompressor.cpp
+    src/sha256.cpp src/fileHasher.cpp src/compressionStats.cpp
     src/compressionVerifier.cpp
 )
-target_include_directories(utilCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_compile_features(utilCore PUBLIC cxx_std_17)
-target_link_libraries(utilCore PUBLIC
-    $<$<AND:$<CXX_COMPILER_ID:GNU>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,9.0>>:stdc++fs>
-)
+target_include_directories(huffman_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(huffman_core PUBLIC cxx_std_17)
+target_link_libraries(huffman_core PUBLIC
+    $<$<AND:$<CXX_COMPILER_ID:GNU>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,9.0>>:stdc++fs>)
+# Compatibility aliases for the original tests/CLI, without duplicating implementations.
+add_library(huffmanCore ALIAS huffman_core)
+add_library(utilCore INTERFACE)
+target_link_libraries(utilCore INTERFACE huffman_core)
 
 add_library(consoleUi STATIC src/consoleUI.cpp)
 target_include_directories(consoleUi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -55,6 +44,12 @@ add_executable(huffman src/main.cpp)
 target_link_libraries(huffman PRIVATE huffmanCore utilCore consoleUi appCore)
 install(TARGETS huffman RUNTIME DESTINATION bin)
 
+option(HUFFMAN_BUILD_GUI "Build the native Qt 6 Type Foundry GUI" ON)
+if(HUFFMAN_BUILD_GUI)
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 QuickDialogs2 Concurrent Widgets)
+    add_subdirectory(gui)
+endif()
+
 option(HUFFMAN_BUILD_TESTS "Build HuffmanCompressionTool tests" ON)
 
 if(HUFFMAN_BUILD_TESTS)
@@ -68,6 +63,7 @@ if(HUFFMAN_BUILD_TESTS)
                  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
     endfunction()
 
+    addHuffmanTest(trace_inspector tests/test_trace_inspector.cpp huffman_core)
     addHuffmanTest(huffmanTree tests/test_huffmanTree.cpp huffmanCore)
     addHuffmanTest(bitReader tests/test_bitReader.cpp huffmanCore)
     addHuffmanTest(roundtrip tests/test_roundtrip.cpp huffmanCore)

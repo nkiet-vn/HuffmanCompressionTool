@@ -285,3 +285,92 @@ theo khối 64 KB (`IO_CHUNK_SIZE`) và tính CRC32 trên luồng dữ liệu, n
   Hướng cải tiến: Canonical Huffman để chỉ lưu độ dài mã.
 - Chưa hỗ trợ nén theo khối (streaming): nén đọc file nguồn 2 lượt (lượt 1 đếm tần suất + CRC,
   lượt 2 mã hóa).
+
+---
+
+# The Type Foundry — native Qt Quick GUI (v1.0.0)
+
+**Concept.** Every byte is a metal sort in a compositor's tray. A heavier sort means the byte occurs more frequently, and a shorter code is cast for it. The observation bench records real Min-Heap pops, merges and tie-breaks from the existing Huffman implementation. The title plate, offset rulers, sharp ink strokes and printer-receipt verification make this an independent print-shop instrument rather than a stock desktop theme. The same HUF1/HUF2/HUF3 CLI remains available. Nothing is uploaded, fetched or processed remotely by the application.
+
+**Three central decisions.** (1) The canonical code table and trace both come from the core C++17 algorithm; QML only presents its outputs. (2) The Paper/Darkroom system is built from custom 1px-edged QML controls, not Qt's platform controls, without shaders or blur. (3) GUI jobs use QtConcurrent worker threads; `ProgressCallback` sends queued UI notifications, and cancellation interrupts at the next processed I/O block.
+
+## Layout
+
+```
+include/fileInspector.h                  # structured, read-only HUF header API
+src/fileInspector.cpp
+include/huffmanTree.h                   # optional TreeBuildListener
+src/huffmanTree.cpp
+               
+gui/
+  CMakeLists.txt                       # Qt 6 app + QML resources + NSIS/CPack metadata
+  main.cpp                             # window, desktop progress, native notifications
+  controllers/FoundryController.h/.cpp # worker operations, trace, inspection, settings
+  qml/Main.qml                         # six editorial screens
+  qml/components/PressButton.qml       # custom ink/press buttons
+  qml/components/TypeField.qml         # custom text fields
+  qml/components/RuleLabel.qml         # typographic section headers
+  resources/type-sort.png              # application icon
+  resources/grain.png                  # transparent, seamless texture tile
+  packaging/type-sort.ico             # Windows icon
+  packaging/app.rc                     # Windows version metadata
+  packaging/installer.nsi             # optional NSIS installer
+  fonts/README.md                     # font families and OFL sources
+scripts/package-windows.ps1            # portable ZIP and optional installer
+```
+
+The static library **`huffman_core`** includes the original Huffman, CRC32, SHA-256 and analysis code. `huffman` remains the independent console executable with the original `ConsoleUI` and `MenuController`, and **`huffman_gui`** is the Qt 6 executable. The compatibility names `huffmanCore` and `utilCore` are retained as CMake targets/aliases so all previous test targets continue to link.
+
+## Windows 10/11 — MSYS2 UCRT64 (recommended)
+
+In the **MSYS2 UCRT64** shell (not MSYS, MinGW64 or Clang64), after installing a recent version of MSYS2:
+
+```bash
+pacman -Syu
+# Reopen the UCRT64 shell if pacman asks you to.
+pacman -S --needed mingw-w64-ucrt-x86_64-toolchain \
+    mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja \
+    mingw-w64-ucrt-x86_64-qt6-base mingw-w64-ucrt-x86_64-qt6-declarative \
+    mingw-w64-ucrt-x86_64-qt6-tools
+
+cd /d/CODE/HuffmanCompressionTool-develop
+cmake -S . -B build-ucrt64 -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    -DHUFFMAN_BUILD_GUI=ON -DHUFFMAN_BUILD_TESTS=ON
+cmake --build build-ucrt64 --parallel 4
+ctest --test-dir build-ucrt64 --output-on-failure
+./build-ucrt64/gui/huffman_gui.exe
+./build-ucrt64/huffman.exe --help
+```
+
+Adjust `cd` to the directory where you extracted this ZIP. If you use **MSVC 2022** with an installed Qt 6 kit instead, open a Developer PowerShell for MSVC and configure with `cmake -S . -B build-msvc -DCMAKE_PREFIX_PATH="C:/Qt/6.x.x/msvc2022_64"`; build with `cmake --build build-msvc --config Release` and run `build-msvc/gui/Release/huffman_gui.exe`.
+
+Qt 6.5 or newer is required when `HUFFMAN_BUILD_GUI=ON`. For core/CLI-only builds without a Qt installation, use `-DHUFFMAN_BUILD_GUI=OFF`. A missing Qt installation deliberately fails a GUI-enabled configure rather than silently omitting the application.
+
+## Portable ZIP and Windows installer
+
+After building, run this from PowerShell with the MSYS2 UCRT64 `bin` directory on `PATH`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1 -BuildDir build-ucrt64
+```
+
+The script copies both executables, calls `windeployqt6` or `windeployqt` with `--qmldir gui/qml`, and bundles the Qt runtime into `dist/TypeFoundry-1.0.0-portable.zip`. If `makensis` is also installed, the same script generates `dist/TypeFoundry-1.0.0-Setup.exe` with a Start Menu shortcut. `gui/packaging/installer.nsi` is the installer source. Deploy the dynamic Qt DLLs and corresponding plugins unmodified.
+
+For a GUI build on Linux/macOS, install Qt 6.5+ (Core, GUI, QML, Quick, QuickControls2, QuickDialogs2, Concurrent and Widgets), run `cmake -S . -B build -DHUFFMAN_BUILD_GUI=ON && cmake --build build`, then launch `./build/gui/huffman_gui` (Linux) or `open build/gui/huffman_gui.app` (macOS). The CI definition attempts all three platforms.
+
+## Operator's first-run check
+
+1. Open **SET / Compress** and select `file_mau_txt/mau_test.txt`. The observation bench should show a real byte histogram and canonical codes. Use PLAY, PAUSE, STEP and the ruler to inspect the Min-Heap operations. The heap keys use `(frequency, minSymbol)`.
+2. Select or enter a new output path, click **COMPRESS FILE**, and confirm the resulting HUF3 format and stored/huffman choice. For random or very small data, `STORED` is chosen rather than exceeding the original size by more than the fixed 17-byte HUF3 header.
+3. Switch to **PROOF**, select the same source, and use an output path that does not exist. The restored copy is written to `<archive>.restored`; SHA-256 values printed on the certificate must match. The printer-stamp success label only appears after a hash match.
+4. Switch to **SCAN**, open the resulting archive, then hover over the first 4/1/8/4-byte header segments. The real hex values, field sizes, CRC32, symbol count and file hash should appear. For HUF3-HUFFMAN, the symbol/length extension also appears.
+
+### Cancellation, compatibility and limitations
+
+The compressor makes an internal `.tmp` output and only renames it on success; the decompressor's existing `OutputGuard` deletes incomplete output when unwinding. Workers use an atomic cancel flag and interrupt the next `ProgressCallback`, cleaning temporary output on cancellation. The initial scan and SHA-256 passes use blocking file I/O **within the worker**, so the UI stays interactive but cancellation is not instantaneous during those passes. No timing or 60-fps measurement is implied by the implementation.
+
+The default theme follows the OS palette and may be overridden under the title-bar theme selector. Windows supports frameless drag-to-move, resize and Win11 `HTMAXBUTTON` snap flyout integration; Linux/macOS retain their native frame. Window geometry, language, recent paths, theme and reduced-motion choice use `QSettings`. Windows tries to follow the OS animation setting on first run; other platforms use the manual preference by default.
+
+**Fonts.** Exactly three font families are referenced in the UI: Fraunces, IBM Plex Sans and JetBrains Mono. Font binaries are **not** included in this distributable. Install the three families separately or bundle them with their respective SIL Open Font License 1.1 files before public release; the official projects are listed in `gui/fonts/README.md`. Missing fonts fall back to system faces, so visual fidelity varies until they are installed.
+
+**Qt licensing.** The application dynamically links to Qt 6. If distributing with the LGPLv3 Qt builds, include all applicable Qt and third-party licenses/notices, access to the corresponding Qt source and modifications, and the means to replace/re-link LGPL-covered Qt libraries; do not prohibit reverse engineering needed for that purpose. Check each included module's exact license, and consider legal advice for commercial distribution. See [Qt's official LGPL obligations](https://www.qt.io/development/open-source-lgpl-obligations).
