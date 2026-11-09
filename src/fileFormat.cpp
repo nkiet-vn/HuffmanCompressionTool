@@ -23,7 +23,7 @@ std::uint64_t readLittleEndian(const std::uint8_t* data, int bytes) {
 }
 
 void writeLeb128(std::ostream& out, std::uint64_t value) {
-    // Nhóm thấp 7 bit trước; cờ bit 0 (bit cao) = 1 nghĩa là còn byte tiếp.
+    
     while (value >= 0x80u) {
         out.put(static_cast<char>((value & 0x7Fu) | 0x80u));
         value >>= 7;
