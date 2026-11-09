@@ -16,7 +16,7 @@ Tài liệu này là nguồn chuẩn cho người nén và người giải nén.
 ## 2. LEB128 (unsigned varint)
 
 Ghi số nguyên không dấu theo từng nhóm 7 bit, **nhóm thấp trước**. Mỗi byte có 1 bit cờ ở vị trí
-thấp nhất (bit 0): `1` = còn byte tiếp, `0` = byte cuối. 7 bit còn lại (bit 7..1) là dữ liệu.
+cao nhất (bit 7): `1` = còn byte tiếp, `0` = byte cuối. 7 bit còn lại (bit 6..0) là dữ liệu.
 
 Ví dụ:
 
@@ -27,7 +27,7 @@ Ví dụ:
 | 127 | `7F` |
 | 128 | `80 01` |
 | 300 | `AC 02` |
-| 5 000 000 | `C0 91 B1 02` |
+| 5 000 000 | `C0 96 B1 02` |
 
 Ví dụ `300 = 0b1_0010_1100`: nhóm thấp 7 bit là `010_1100`. Vì còn byte tiếp, gắn cờ `1` vào bit 7
 thành `1010 1100` = `0xAC`. Số còn lại là `300 >> 7 = 2` = `0x02`, không còn byte nên cờ `0` → `0x02`.
@@ -43,7 +43,7 @@ varint dài quá 10 byte, byte thứ 10 lớn hơn `0x01`, hoặc varint không 
 | mode | 1 byte | uint8 | `0` = HUFFMAN, `1` = STORED. Giá trị khác → lỗi |
 | originalLength | 8 byte | uint64 | Số byte của dữ liệu gốc |
 | crc32 | 4 byte | uint32 | CRC-32 (IEEE 802.3) của dữ liệu **gốc**, tính trên toàn bộ file gốc |
-| uniqueCount | 2 byte | uint16 | (chỉ HUFFMAN) Số symbol khác nhau, 0 → 256 |
+| uniqueCount | 2 byte | uint16 | (chỉ HUFFMAN) Số symbol khác nhau, từ 0 đến 256; bằng 0 khi và chỉ khi `originalLength = 0` |
 | Bảng tần suất | thay đổi | | (chỉ HUFFMAN) `uniqueCount` mục: `symbol` (1 byte) + `freq` (LEB128) |
 | Dữ liệu | phần còn lại | | HUFFMAN: chuỗi bit nối liền (MSB-first, đệm 0). STORED: byte gốc nguyên vẹn |
 
@@ -156,30 +156,44 @@ HUF3 dùng cùng cây để lấy độ dài, sau đó gán mã canonical; thứ
 - CRC tính trên **dữ liệu gốc** (trước khi nén, hoặc trước khi lưu STORED), không tính trên header.
 - Giá trị tham chiếu: `CRC32("123456789") = 0xCBF43926`, `CRC32("") = 0x00000000`.
 
-## 6. Ví dụ: nén chuỗi `"aab"` (17 byte)
+## 6. Ví dụ: nén chuỗi `"aab"` (3 byte)
 
-**Bước chọn mode:** bản STORED = `17 + 3 = 20` byte. Bản HUFFMAN = `17 (header) + 2 (uniqueCount)
-+ 2 (symbol 'a' + freq LEB128 1 byte) + 2 (symbol 'b' + freq LEB128 1 byte) + 1 (byte bit) = 24` byte.
-`24 >= 20` → chọn **STORED** (mode = 1).
+**Bước chọn mode (HUF3):** bản STORED = `17 + 3 = 20` byte. Bản HUFFMAN = `17 (header) + 2 (uniqueCount)
++ 4 (2 symbol × 2 byte: symbol + codeLength) + 1 (byte bit) = 24` byte. `24 >= 20` → chọn **STORED** (mode = 1).
 
-Bước tính:
+Dữ kiện dùng chung:
 - Tần suất: `a` (0x61) = 2, `b` (0x62) = 1.
 - CRC32 của `"aab"` = `0x690E2297` (little-endian: `97 22 0E 69`).
-- Mã Huffman (nếu dùng): hai nút `b` có khóa `(1, 0x62)`, `a` có khóa `(2, 0x61)`. Nút nhỏ hơn là `b`,
-  nên `b` là con trái (bit 0), `a` là con phải (bit 1) → `b` = `0`, `a` = `1`.
-  Chuỗi bit `a a b` → `1 1 0`, đệm 5 bit 0 → `1100 0000` = `0xC0`.
 
-File đầy đủ (20 byte, mode STORED):
+File đầy đủ do bộ nén thực tế ghi ra (20 byte, mode STORED):
 
 ```
-48 55 46 32                          magic "HUF2"
+48 55 46 33                          magic "HUF3"
 01                                   mode = STORED
 03 00 00 00 00 00 00 00              originalLength = 3
 97 22 0E 69                          crc32 = 0x690E2297
 61 61 62                             dữ liệu gốc "aab"
 ```
 
-Để tham chiếu, nếu dữ liệu đủ lớn để bản HUFFMAN thắng thì phần đầu file có dạng (ví dụ cùng `"aab"`):
+Để tham chiếu, nếu bản HUFFMAN được chọn thì file HUF3 hợp lệ (24 byte, bộ giải nén khôi phục đúng `"aab"`) là:
+
+```
+48 55 46 33                          magic "HUF3"
+00                                   mode = HUFFMAN
+03 00 00 00 00 00 00 00              originalLength = 3
+97 22 0E 69                          crc32
+02 00                                uniqueCount = 2
+61 01                                symbol 'a', codeLength 1
+62 01                                symbol 'b', codeLength 1
+20                                   dữ liệu bit: 001 + đệm 00000
+```
+
+Hai symbol đều có độ dài 1 nên mã canonical được gán theo `(codeLength, symbol)`: `a` = `0`, `b` = `1`.
+Chuỗi `a a b` → `0 0 1`, đệm 5 bit 0 → `0010 0000` = `0x20`.
+
+**So sánh với HUF1/HUF2 (mã gán theo đường đi trong cây):** `b` có khóa `(1, 0x62)` nhỏ hơn `a` có khóa
+`(2, 0x61)` nên `b` là con trái (bit 0) và `a` là con phải (bit 1) → `b` = `0`, `a` = `1`. Chuỗi `a a b` → `1 1 0`,
+đệm 5 bit 0 → `1100 0000` = `0xC0`. Phần đầu file HUF2 tương ứng có dạng:
 
 ```
 48 55 46 32                          magic "HUF2"
@@ -197,7 +211,7 @@ C0                                   dữ liệu bit: 110 + đệm 00000
 Bộ giải nén phải từ chối (báo lỗi, xóa file đích dở dang) nếu gặp một trong các trường hợp sau.
 Các kiểm tra của HUF1 được giữ nguyên và áp dụng tương đương cho HUF2.
 
-**Header HUF1/HUF2:**
+**Header (mọi phiên bản):**
 - File ngắn hơn `HEADER_SIZE` (17 byte).
 - Magic không phải `"HUF1"`, `"HUF2"` hoặc `"HUF3"`.
 - `mode` khác `0` và `1`.
@@ -231,8 +245,10 @@ và so sánh với `8 × (kích thước file − kích thước header − kíc
 Chênh lệch hợp lệ chỉ được nằm trong khoảng `[0, 7]` (bit đệm ở byte cuối).
 Với cây 1 ký tự hoặc 2 ký tự cần đủ byte cho mọi bit: `ceil(requiredBits / 8)` byte.
 
-**Ghi file đích:** dữ liệu giải mã được ghi theo khối 64 KB và CRC tính đồng thời trên chính dữ liệu
-ghi ra. Chỉ đổi tên file tạm thành file đích khi CRC khớp; mọi lỗi giữa chừng đều xóa file tạm.
+**Ghi file đích:** dữ liệu giải mã được ghi **thẳng vào file đích** theo khối 64 KB (không qua file tạm), CRC tính
+đồng thời trên chính dữ liệu ghi ra rồi đối chiếu sau khi ghi xong. Mọi lỗi (CRC sai, dữ liệu thiếu/thừa, lỗi ghi)
+đều xóa file đích dở dang. Hệ quả: nếu file đích đã tồn tại thì nó bị ghi đè ngay khi bắt đầu giải nén và bị xóa nếu
+giải nén lỗi. Riêng bộ nén ghi ra `<đích>.tmp` rồi đổi tên thành file đích, và từ chối nếu `.tmp` đã tồn tại.
 
 ## 8. Giới hạn
 
@@ -246,7 +262,7 @@ Bộ nén **không ghi** HUF1 nữa; bộ giải nén vẫn đọc được đ�
 | Phần | Kích thước | Kiểu | Ý nghĩa |
 |---|---|---|---|
 | magic | 4 byte | ASCII | `"HUF1"` |
-| uniqueCount | 2 byte | uint16 | Số symbol khác nhau, 0 → 256 |
+| uniqueCount | 2 byte | uint16 | Số symbol khác nhau, từ 0 đến 256; bằng 0 khi và chỉ khi `originalLength = 0` |
 | originalLength | 8 byte | uint64 | Số byte của dữ liệu gốc |
 | Bảng tần suất | `uniqueCount × 9` byte | | `symbol` (uint8) + `freq` (uint64 LE) |
 | Dữ liệu bit | Phần còn lại | | Chuỗi mã Huffman nối liền, đệm 0 |

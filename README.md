@@ -47,7 +47,7 @@ HuffmanCompressionTool/
 │   ├── compressionVerifier.cpp # Xác minh toàn vẹn
 │   ├── fileHasher.cpp          # Hash file
 │   └── sha256.cpp              # Triển khai SHA-256
-├── file_mau_txt/               # Tệp mẫu dùng cho kiểm thử thủ công / verify_samples
+├── file_mau_txt/               # Tệp mẫu cho kiểm thử thủ công và bước kiểm tra nén/giải nén của CI (mau_giainen.txt)
 └── tests/
     ├── test_huffmanTree.cpp
     ├── test_bitReader.cpp
@@ -61,7 +61,7 @@ HuffmanCompressionTool/
     ├── test_huf2.cpp           # HUF3 round-trip/fuzz, tương thích HUF2/HUF1
     ├── test_canonicalHuffman.cpp # Kraft và giới hạn độ dài mã canonical
     ├── test_output_guard.cpp   # Xóa file đích dở dang khi CRC sai / file bị cắt
-    └── verify_samples.cpp
+    └── verify_samples.cpp      # Tự sinh dữ liệu mẫu, nén/giải nén, đối chiếu SHA-256
 ```
 
 ### Kiến trúc tầng giao diện
@@ -160,6 +160,7 @@ huffman --ascii -i <file>
 ```
 
 Sau khi nén, chương trình in kích thước gốc, kích thước nén và tỷ lệ nén (%).
+Ở dòng lệnh (`-c`, `-d`, `-v`), nếu tệp đích đã tồn tại thì bị thay thế mà **không hỏi**; menu tương tác mới hỏi xác nhận.
 Chế độ `-v` giải nén ra file tạm và so sánh SHA-256 với file gốc.
 Tham số sai (chế độ không hợp lệ, thiếu đối số) luôn báo lỗi và trả exit code 1.
 `-i` dùng chung logic hiển thị với mục `[4]`; tệp không tồn tại/lỗi đọc trả exit code 1.
@@ -177,13 +178,16 @@ hướng stdout, tiến trình bị tắt để không làm nhiễu pipe và CI.
   nên file nhỏ hay dữ liệu ngẫu nhiên không còn bị phình.
 - **CRC32 trong file** (`src/crc32.cpp`, bảng tra 256 phần tử): bộ giải nén tự kiểm tra dữ liệu gốc,
   sửa 1 bit là phát hiện được; đồng thời vẫn xác minh bằng SHA-256 (`-v`).
-- **Bảng tần suất nén bằng LEB128** thay vì 9 byte/ký tự.
-- **Tương thích ngược**: vẫn giải nén được file HUF1 cũ.
+- **Bảng độ dài mã canonical (HUF3)**: mỗi ký hiệu chỉ tốn 2 byte (`symbol` + `codeLength`), thay vì 9 byte
+  tần suất ở HUF1 hoặc tần suất LEB128 ở HUF2.
+- **Tương thích ngược**: vẫn giải nén được file HUF2 và HUF1 cũ.
 - **Thống kê tỷ lệ nén** hiển thị ngay trên CLI.
-- **An toàn dữ liệu**: từ chối nén khi nguồn đích trùng nhau (kiểm tra bằng
-  `std::filesystem::equivalent`, kể cả khi đường dẫn viết khác nhau); ghi ra file tạm rồi đổi tên;
-  từ chối giải nén đè lên chính file nén, bảo vệ nguồn và file tạm đã tồn tại;
-  xóa file đích dở dang khi giải nén lỗi.
+- **An toàn dữ liệu**: từ chối nén/giải nén khi nguồn và đích trùng nhau (kiểm tra bằng
+  `std::filesystem::equivalent`, kể cả khi đường dẫn viết khác nhau).
+  **Nén** ghi ra `<đích>.tmp` rồi mới đổi tên thành file đích, và từ chối nếu `.tmp` đã tồn tại.
+  **Giải nén** ghi thẳng vào file đích (không qua file tạm) và xóa file đích dở dang khi giải nén lỗi
+  (CRC sai, dữ liệu bị cắt, lỗi ghi...); do đó nếu file đích đã có sẵn thì nó bị ghi đè ngay khi bắt đầu giải nén
+  và bị xóa nếu giải nén lỗi.
 - **Kiểm tra chặt khi giải nén**: đối chiếu số bit cần thiết với số bit có sẵn, từ chối dữ liệu
   thừa ở cuối file và dữ liệu bị cắt.
 
@@ -224,7 +228,7 @@ và HUF1 (bảng tần suất 8 byte, không checksum) vẫn đọc được đ�
 | `cli_info`, `cli_ascii_info`, `cli_info_missing`, `cli_info_bad_args` | CLI `-i`, chế độ `--ascii`, tệp không tồn tại và tham số thiếu |
 | `testT10` | SHA-256, thống kê, xác minh |
 | `verify_samples` | Kiểm thử tổng hợp với file mẫu |
-| `output_guard` | CRC sai và dữ liệu Huffman bị cắt không để lại file đích hoặc file tạm |
+| `output_guard` | CRC sai và dữ liệu Huffman bị cắt không để lại file đích dở dang hoặc file `.tmp` |
 
 Các test dùng `assert` đều có `#undef NDEBUG` nên vẫn kiểm tra thật khi build Release.
 Test chạy trong thư mục build nên không để lại rác ở thư mục gốc.
@@ -258,22 +262,26 @@ Tiêu đề commit bắt đầu bằng mã ticket Jira, theo mẫu `DSA-<số>: 
 
 - Biến, hàm, tên file: **camelCase**, ví dụ `writeBit`, `freqTable`, `bitWriter.h`, `minHeap.h`, `sha256.h`.
 - Lớp và struct: **PascalCase**, ví dụ `BitWriter`, `BitReader`, `MinHeap`.
-- Hằng số: viết hoa có gạch dưới, ví dụ `MAGIC_NUMBER`.
+- Hằng số: viết hoa có gạch dưới, ví dụ `MAGIC_HUF3`, `HEADER_SIZE`, `IO_CHUNK_SIZE`.
 
 ## Hiệu năng
 
-Đo bằng bản Release trên Intel Core i5-6440HQ @ 2.60 GHz, Windows 10 Home 22H2
-(build 19045), MinGW-w64 GCC 16.2.0 (MSYS2 UCRT64). Mỗi phép đo là thời gian chạy CLI,
-thực hiện 3 lần trên cùng tệp và lấy trung vị; SHA-256 xác nhận dữ liệu giải nén khớp tệp gốc.
+Hai phép đo dưới đây dùng bản Release, chạy CLI 3 lần trên cùng tệp và lấy trung vị; `cmp` xác nhận tệp giải nén
+khớp từng byte với tệp gốc.
 
-| Dữ liệu | Kích thước đầu vào | Nén (trung vị) | Giải nén (trung vị) |
-|---|---:|---:|---:|
-| Văn bản tiếng Việt lặp đoạn | 99 999 915 byte (~100 MB) | 1.961 s | 9.618 s |
-| Ngẫu nhiên | 100 000 000 byte (100 MB) | 2.094 s | 0.400 s |
+**Đo 1 (kiểm tra lại trên Linux):** Intel Xeon @ 2.30 GHz (1 vCPU), Ubuntu 24.04, g++ 13.3, CMake Release.
 
-Đo riêng hiệu năng giải nén HUFFMAN trên cùng tệp văn bản tiếng Việt 25 999 944 byte (~26 MB),
+| Dữ liệu | Kích thước đầu vào | Kích thước nén | Nén (trung vị) | Giải nén (trung vị) |
+|---|---:|---:|---:|---:|
+| Văn bản (từ ghép ngẫu nhiên từ README) | 100 000 007 byte (~100 MB) | 72 311 815 byte (27,7%) | 1.534 s | 2.649 s |
+| Ngẫu nhiên (STORED) | 100 000 000 byte (100 MB) | 100 000 017 byte | 1.228 s | 0.256 s |
+
+**Đo 2 (máy phát triển):** Intel Core i5-6440HQ @ 2.60 GHz, Windows 10 Home 22H2 (build 19045),
+MinGW-w64 GCC 16.2.0 (MSYS2 UCRT64). Giải nén HUFFMAN tệp văn bản tiếng Việt 25 999 944 byte (~26 MB),
 3 lần mỗi phiên bản, trung vị: trước refactor **2.931 s**, sau refactor **1.390 s**
 (nhanh hơn khoảng 52.6%). Hai lần đo dùng cùng cấu hình Release và xác nhận SHA-256 sau giải nén.
+
+Hai phép đo dùng máy, hệ điều hành và dữ liệu khác nhau nên không so sánh trực tiếp con số giữa chúng.
 
 Giải nén đọc phần header vào RAM rồi dùng `BitReader` đọc phần dữ liệu bit. Cả nén và giải nén xử lý
 theo khối 64 KB (`IO_CHUNK_SIZE`) và tính CRC32 trên luồng dữ liệu, nên bộ nhớ không phụ thuộc kích thước file.
@@ -282,6 +290,10 @@ theo khối 64 KB (`IO_CHUNK_SIZE`) và tính CRC32 trên luồng dữ liệu, n
 
 - File nén luôn tốn thêm header cố định 17 byte, nên file cực ngắn (1–17 byte) vẫn lớn hơn gốc đúng
   chừng đó — nhưng không bao giờ phình quá `gốc + 17`, khác hẳn HUF1 trước đây (file 17 byte ra 139 byte).
-  Hướng cải tiến: Canonical Huffman để chỉ lưu độ dài mã.
+  (HUF3 đã dùng Canonical Huffman nên bảng mã chỉ tốn 2 byte/ký hiệu.)
+- Độ dài mã tối đa là 32 bit. Nếu cây Huffman sâu hơn, bộ nén lùi về mode STORED thay vì giới hạn độ dài mã.
+  Hướng cải tiến: Huffman giới hạn độ dài (package-merge) để vẫn nén được dữ liệu phân bố cực lệch.
+- Giải nén ghi thẳng vào file đích nên file đích có sẵn bị mất nếu giải nén lỗi; lệnh `-c`/`-d`/`-v` cũng ghi đè
+  mà không hỏi. Hướng cải tiến: giải nén qua `<đích>.tmp` như bộ nén, và hỏi xác nhận hoặc thêm cờ `-f` ở CLI.
 - Chưa hỗ trợ nén theo khối (streaming): nén đọc file nguồn 2 lượt (lượt 1 đếm tần suất + CRC,
   lượt 2 mã hóa).

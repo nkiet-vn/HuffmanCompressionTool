@@ -1,6 +1,7 @@
 # Kết quả kiểm thử
 
-Sinh ra bởi test `verify_samples` (chạy tự động trong CTest) với định dạng ghi hiện tại **HUF3**.
+Hai bảng đầu do test `verify_samples` (chạy tự động trong CTest) sinh ra, với định dạng ghi hiện tại **HUF3**:
+test ghi file `ket_qua_nen.md` trong thư mục build, nội dung được chép sang đây (số liệu đã được chạy lại và khớp).
 Cột **Hash** so sánh SHA-256 của file gốc và file phục hồi sau khi nén + giải nén.
 Cột **Mode** là giá trị `mode` trong header file nén.
 
@@ -61,7 +62,7 @@ Giá trị âm rất nhỏ được hiển thị với chữ số có nghĩa tha
 | `cli_info_bad_args` | Thiếu đường dẫn sau `-i` trả exit code khác 0 |
 | `testT10` | Mock `IdentityCodec` đi qua `ICompressor`/`IDecompressor`, verifier gọi cả nén và giải nén |
 | `minheap`, `huffmanCore` | Min-Heap tự viết (khóa `(freq, minSymbol)`), cây 1 ký tự, bảng mã prefix-free |
-| `output_guard` | CRC sai ở HUFFMAN/STORED và dữ liệu HUFFMAN bị cắt không để lại file đích/file tạm |
+| `output_guard` | CRC sai ở HUFFMAN/STORED và dữ liệu HUFFMAN bị cắt không để lại file đích dở dang hoặc file `.tmp` |
 
 CI cấu hình và build riêng Debug/Release trên Ubuntu, Windows và macOS; sau Release, CLI nén rồi giải
 nén mẫu `file_mau_txt/mau_giainen.txt` và so sánh byte-for-byte (`cmp` hoặc `fc /b`). Bước kiểm tra
